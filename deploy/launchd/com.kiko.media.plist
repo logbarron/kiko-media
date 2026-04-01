@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kiko.media</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO_DIR__/.build/release/KikoMedia</string>
+    </array>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>WorkingDirectory</key>
+    <string>__BASE_DIRECTORY__</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Basic (from setup wizard) -->
+        <key>TURNSTILE_SECRET</key>
+        <string>__TURNSTILE_SECRET__</string>
+        <key>SESSION_HMAC_SECRET</key>
+        <string>__SESSION_HMAC_SECRET__</string>
+        <key>INTERNAL_AUTH_SECRET</key>
+        <string>__INTERNAL_AUTH_SECRET__</string>
+        <key>GATE_SECRET</key>
+        <string>__GATE_SECRET__</string>
+        <key>EVENT_TIMEZONE</key>
+        <string>__EVENT_TIMEZONE__</string>
+        <key>EXTERNAL_SSD_PATH</key>
+        <string>__EXTERNAL_SSD_PATH__</string>
+
+        <!-- Operational -->
+        <key>PUBLIC_PORT</key>
+        <string>__PUBLIC_PORT__</string>
+        <key>INTERNAL_PORT</key>
+        <string>__INTERNAL_PORT__</string>
+        <key>BIND_ADDRESS</key>
+        <string>__BIND_ADDRESS__</string>
+        <key>BASE_DIRECTORY</key>
+        <string>__BASE_DIRECTORY__</string>
+        <key>HEALTH_CHECK_INTERVAL</key>
+        <string>__HEALTH_CHECK_INTERVAL__</string>
+        <key>JSON_MAX_BODY_BYTES</key>
+        <string>__JSON_MAX_BODY_BYTES__</string>
+        <key>WEBHOOK_RETRY_AFTER_SECONDS</key>
+        <string>__WEBHOOK_RETRY_AFTER_SECONDS__</string>
+
+        <!-- Processing -->
+        <key>MAX_CONCURRENT_IMAGES</key>
+        <string>__MAX_CONCURRENT_IMAGES__</string>
+        <key>MAX_CONCURRENT_VIDEOS</key>
+        <string>__MAX_CONCURRENT_VIDEOS__</string>
+        <key>VIDEO_SCHEDULER_POLICY</key>
+        <string>__VIDEO_SCHEDULER_POLICY__</string>
+        <key>MAX_CONCURRENT_REBUILD_PROBES</key>
+        <string>__MAX_CONCURRENT_REBUILD_PROBES__</string>
+        <key>MAX_PENDING_WEBHOOK_JOBS</key>
+        <string>__MAX_PENDING_WEBHOOK_JOBS__</string>
+        <key>THUMBNAIL_SIZE</key>
+        <string>__THUMBNAIL_SIZE__</string>
+        <key>THUMBNAIL_QUALITY</key>
+        <string>__THUMBNAIL_QUALITY__</string>
+        <key>PREVIEW_SIZE</key>
+        <string>__PREVIEW_SIZE__</string>
+        <key>PREVIEW_QUALITY</key>
+        <string>__PREVIEW_QUALITY__</string>
+        <key>VIDEO_THUMBNAIL_SIZE</key>
+        <string>__VIDEO_THUMBNAIL_SIZE__</string>
+        <key>VIDEO_THUMBNAIL_TIME</key>
+        <string>__VIDEO_THUMBNAIL_TIME__</string>
+        <key>VIDEO_THUMBNAIL_QUALITY</key>
+        <string>__VIDEO_THUMBNAIL_QUALITY__</string>
+        <key>VIDEO_TRANSCODE_TIMEOUT</key>
+        <string>__VIDEO_TRANSCODE_TIMEOUT__</string>
+        <key>VIDEO_TRANSCODE_PRESET</key>
+        <string>__VIDEO_TRANSCODE_PRESET__</string>
+        <key>TB_WORKERS</key>
+        <string>__TB_WORKERS__</string>
+        <key>TB_PORT</key>
+        <string>__TB_PORT__</string>
+        <key>TB_CONNECT_TIMEOUT</key>
+        <string>__TB_CONNECT_TIMEOUT__</string>
+
+        <!-- Security -->
+        <key>MAX_IMAGE_PIXELS</key>
+        <string>__MAX_IMAGE_PIXELS__</string>
+        <key>MAX_IMAGE_DIMENSION</key>
+        <string>__MAX_IMAGE_DIMENSION__</string>
+        <key>MAX_COMPRESSION_RATIO</key>
+        <string>__MAX_COMPRESSION_RATIO__</string>
+
+        <!-- Database -->
+        <key>SQLITE_BUSY_TIMEOUT</key>
+        <string>__SQLITE_BUSY_TIMEOUT__</string>
+        <key>SQLITE_CACHE_SIZE</key>
+        <string>__SQLITE_CACHE_SIZE__</string>
+        <key>DEFAULT_PAGE_SIZE</key>
+        <string>__DEFAULT_PAGE_SIZE__</string>
+        <key>MAX_PAGE_SIZE</key>
+        <string>__MAX_PAGE_SIZE__</string>
+        <key>MAX_PAGE_OFFSET</key>
+        <string>__MAX_PAGE_OFFSET__</string>
+        <key>SQL_BATCH_SIZE</key>
+        <string>__SQL_BATCH_SIZE__</string>
+
+        <!-- Session -->
+        <key>SESSION_COOKIE_TTL</key>
+        <string>__SESSION_COOKIE_TTL__</string>
+        <key>SESSION_COOKIE_NAME</key>
+        <string>__SESSION_COOKIE_NAME__</string>
+        <key>TURNSTILE_VERIFY_TIMEOUT</key>
+        <string>__TURNSTILE_VERIFY_TIMEOUT__</string>
+        <key>TURNSTILE_MAX_RESPONSE</key>
+        <string>__TURNSTILE_MAX_RESPONSE__</string>
+        <key>TURNSTILE_MAX_INFLIGHT_VERIFICATIONS</key>
+        <string>__TURNSTILE_MAX_INFLIGHT_VERIFICATIONS__</string>
+        <key>TURNSTILE_OVERLOAD_RETRY_AFTER_SECONDS</key>
+        <string>__TURNSTILE_OVERLOAD_RETRY_AFTER_SECONDS__</string>
+        <key>TURNSTILE_EXPECTED_HOSTNAME</key>
+        <string>__TURNSTILE_EXPECTED_HOSTNAME__</string>
+        <key>TURNSTILE_EXPECTED_ACTION</key>
+        <string>__TURNSTILE_EXPECTED_ACTION__</string>
+        <key>TURNSTILE_EXPECTED_CDATA</key>
+        <string>__TURNSTILE_EXPECTED_CDATA__</string>
+
+        <!-- Caching -->
+        <key>CACHE_CONTROL</key>
+        <string>__CACHE_CONTROL__</string>
+
+        <!-- Internal -->
+        <key>QUEUE_COMPACTION_THRESHOLD</key>
+        <string>__QUEUE_COMPACTION_THRESHOLD__</string>
+        <key>SHA256_BUFFER_SIZE</key>
+        <string>__SHA256_BUFFER_SIZE__</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__BASE_DIRECTORY__/logs/kiko-media.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__BASE_DIRECTORY__/logs/kiko-media.log</string>
+</dict>
+</plist>

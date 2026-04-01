@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kiko.tusd</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__HOME__/bin/tusd</string>
+        <string>-upload-dir</string>
+        <string>__BASE_DIRECTORY__/uploads</string>
+        <string>-max-size</string>
+        <string>__TUSD_MAX_SIZE__</string>
+        <string>-base-path</string>
+        <string>/files/</string>
+        <string>-behind-proxy</string>
+        <string>-hooks-http</string>
+        <string>http://127.0.0.1:__INTERNAL_PORT__/hooks/upload-complete</string>
+        <string>-hooks-enabled-events</string>
+        <string>pre-create,post-finish</string>
+        <string>-hooks-http-forward-headers</string>
+        <string>Cookie</string>
+        <string>-disable-download</string>
+        <string>-host</string>
+        <string>127.0.0.1</string>
+        <string>-port</string>
+        <string>1080</string>
+        <string>-verbose=false</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>GOGC</key>
+        <string>400</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>__BASE_DIRECTORY__</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>__BASE_DIRECTORY__/logs/tusd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__BASE_DIRECTORY__/logs/tusd.log</string>
+</dict>
+</plist>

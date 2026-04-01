@@ -1,0 +1,1533 @@
+import Foundation
+import Darwin
+import Network
+import AVFoundation
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
+import CryptoKit
+import IOKit
+
+let queue = DispatchQueue(label: "kiko-worker", attributes: .concurrent)
+
+let port: UInt16 = __TB_PORT__
+let defaultWorkDir = "__WORK_DIR__"
+let transcodePreset = "__VIDEO_TRANSCODE_PRESET__"
+let thumbMaxSize = __VIDEO_THUMBNAIL_SIZE__
+let thumbTime: Double = __VIDEO_THUMBNAIL_TIME__
+let thumbQuality: Double = __VIDEO_THUMBNAIL_QUALITY__
+let transcodeTimeout = __VIDEO_TRANSCODE_TIMEOUT__
+let zeroSHA256 = String(repeating: "0", count: 64)
+
+func workerUsageInvocation(arguments: [String]) -> String {
+    guard let arg0 = arguments.first else {
+        return "swift worker.swift"
+    }
+    let name = URL(fileURLWithPath: arg0).lastPathComponent
+    if name.hasSuffix(".swift") {
+        return "swift \(name)"
+    }
+    return name
+}
+
+func printWorkerUsage(arguments: [String]) {
+    let invocation = workerUsageInvocation(arguments: arguments)
+    print("Usage: \(invocation) [--work-dir <path>]")
+    print("Options:")
+    print("  --work-dir <path>  Override worker temp directory (default: \(defaultWorkDir))")
+    print("  -h, --help         Show this help message")
+}
+
+func parseWorkerWorkDir(arguments: [String]) -> String {
+    let args = Array(arguments.dropFirst())
+    if args.isEmpty {
+        return defaultWorkDir
+    }
+
+    var parsedWorkDir: String?
+    var index = 0
+    while index < args.count {
+        let argument = args[index]
+        switch argument {
+        case "-h", "--help":
+            printWorkerUsage(arguments: arguments)
+            exit(0)
+        case "--work-dir":
+            let valueIndex = index + 1
+            guard valueIndex < args.count else {
+                print("Missing value for --work-dir")
+                printWorkerUsage(arguments: arguments)
+                exit(2)
+            }
+            let raw = args[valueIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty else {
+                print("Work dir cannot be empty")
+                exit(2)
+            }
+            parsedWorkDir = NSString(string: raw).expandingTildeInPath
+            index = valueIndex + 1
+        default:
+            print("Unknown argument: \(argument)")
+            printWorkerUsage(arguments: arguments)
+            exit(2)
+        }
+    }
+
+    return parsedWorkDir ?? defaultWorkDir
+}
+
+// Set once during startup (before listener accepts connections), then read-only.
+nonisolated(unsafe) var workDir = parseWorkerWorkDir(arguments: CommandLine.arguments)
+nonisolated(unsafe) var caffeinateProcess: Process?
+
+enum WorkerError: Error {
+    case startup(String)
+    case processing(String)
+}
+
+struct BridgeInfo {
+    let interface: String
+    let ip: String
+}
+
+func now() -> UInt64 { DispatchTime.now().uptimeNanoseconds }
+
+func formatBytes(_ bytes: Int) -> String {
+    if bytes >= 1_000_000_000 { return String(format: "%.1f GB", Double(bytes) / 1e9) }
+    if bytes >= 1_000_000 { return String(format: "%.0f MB", Double(bytes) / 1e6) }
+    return String(format: "%.0f KB", Double(bytes) / 1e3)
+}
+
+// MARK: - ANSI Helpers
+
+let isColor = isatty(fileno(stdout)) != 0
+func ansi(_ code: String) -> String { isColor ? "\u{1b}[\(code)m" : "" }
+let bold = ansi("1")
+let dim = ansi("2")
+let reset = ansi("0")
+let red = ansi("31")
+let green = ansi("32")
+let yellow = ansi("33")
+let cyan = ansi("36")
+
+// MARK: - Dashboard
+
+final class Dashboard: @unchecked Sendable {
+    private let lock = DispatchQueue(label: "dashboard")
+    private var completed = 0
+    private var failed = 0
+    private var jobs: [(id: String, state: JobState)] = []
+    private var bridge: BridgeInfo?
+    private var mtu = ""
+    private var workDir = ""
+    private var sleepStatus = ""
+    private var refreshTimer: DispatchSourceTimer?
+    private var spinnerFrame: Int = 0
+    private let spinnerChars: [Character] = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+
+    private enum RuntimeStatus {
+        case starting
+        case listening(ip: String)
+    }
+    private var status: RuntimeStatus = .starting
+
+    private struct JobState {
+        let name: String
+        let size: Int
+        var recv: String
+        var proc: String
+        var send: String
+        var procStartNanos: UInt64?
+        var procPercent: Int?
+    }
+
+    private func spinner() -> Character {
+        spinnerChars[spinnerFrame % spinnerChars.count]
+    }
+
+    private func progressBar(percent: Int, width: Int = 20) -> String {
+        let filled = max(0, min(width, percent * width / 100))
+        let empty = width - filled
+        return "\(cyan)\(String(repeating: "█", count: filled))\(dim)\(String(repeating: "░", count: empty))\(reset)"
+    }
+
+    private func dotLeader(label: String, value: String, width: Int = 18) -> String {
+        let dotsNeeded = max(2, width - label.count)
+        let dots = "\(dim)\(String(repeating: "·", count: dotsNeeded))\(reset)"
+        return "  \(label) \(dots)  \(value)"
+    }
+
+    private func sectionDivider(title: String? = nil, width: Int = 43) -> String {
+        guard let title else {
+            return "  \(dim)\(String(repeating: "─", count: width))\(reset)"
+        }
+        let prefix = "── "
+        let suffix = " "
+        let remaining = max(0, width - prefix.count - title.count - suffix.count)
+        return "  \(dim)\(prefix)\(reset)\(bold)\(title)\(reset)\(dim)\(suffix)\(String(repeating: "─", count: remaining))\(reset)"
+    }
+
+    private func processingLine(startNanos: UInt64, percent: Int?) -> String {
+        let elapsed = Double(now() - startNanos) / 1_000_000_000
+        let elapsedStr = String(format: "%.1fs", elapsed)
+        guard let percent else {
+            return "    Proc  \(spinner()) \(elapsedStr)"
+        }
+        return "    Proc  \(progressBar(percent: percent)) \(String(format: "%3d", percent))% \(dim)·\(reset) \(elapsedStr)"
+    }
+
+    init() {
+        startRefreshTimer()
+    }
+
+    private func startRefreshTimer() {
+        guard isColor else { return }
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + 0.25, repeating: 0.25, leeway: .milliseconds(50))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.lock.sync {
+                self.spinnerFrame += 1
+                self.redrawFrame()
+            }
+        }
+        timer.resume()
+        refreshTimer = timer
+    }
+
+    deinit {
+        refreshTimer?.cancel()
+    }
+
+    private func pendingLine(_ stage: String) -> String {
+        return "    \(stage)  \(dim)\(spinner()) waiting\(reset)"
+    }
+
+    private func skippedLine(_ stage: String) -> String {
+        return "    \(stage)  \(yellow)skipped\(reset)"
+    }
+
+    private func renderFrame() -> String {
+        let boxW = 44
+        let inner = boxW - 6 // content width inside │  ...  │
+        var lines: [String] = []
+        lines.append("")
+
+        // Title box
+        lines.append("  \(dim)┌\(String(repeating: "─", count: boxW - 2))┐\(reset)")
+
+        let title = "kiko-media Thunderbolt Worker"
+        let titlePad = String(repeating: " ", count: max(0, inner - title.count))
+        lines.append("  \(dim)│\(reset)  \(bold)\(title)\(reset)\(titlePad)  \(dim)│\(reset)")
+
+        let (statusStr, statusVisible): (String, Int) = {
+            switch status {
+            case .starting:
+                let text = "Starting..."
+                return ("\(yellow)\(text)\(reset)", text.count)
+            case .listening(let ip):
+                let text = "Listening on \(ip):\(port)"
+                return ("\(green)\(text)\(reset)", text.count)
+            }
+        }()
+        let statusPad = String(repeating: " ", count: max(0, inner - statusVisible))
+        lines.append("  \(dim)│\(reset)  \(statusStr)\(statusPad)  \(dim)│\(reset)")
+
+        lines.append("  \(dim)└\(String(repeating: "─", count: boxW - 2))┘\(reset)")
+        lines.append("")
+
+        // Info section with dot leaders
+        if let bridge {
+            lines.append(dotLeader(label: "Bridge", value: "\(bridge.interface) (\(bridge.ip))"))
+        } else {
+            lines.append(dotLeader(label: "Bridge", value: "\(yellow)unknown\(reset)"))
+        }
+        lines.append(dotLeader(label: "MTU", value: mtu))
+        lines.append(dotLeader(label: "Port", value: "\(port)"))
+        lines.append(dotLeader(label: "Work dir", value: workDir))
+        lines.append(dotLeader(label: "Sleep", value: sleepStatus))
+        lines.append("")
+
+        // Jobs section
+        if jobs.isEmpty {
+            lines.append(sectionDivider(title: "Active Jobs (0)"))
+            lines.append("")
+            lines.append("  \(dim)\(spinner()) Waiting for job...\(reset)")
+            lines.append("")
+        } else {
+            lines.append(sectionDivider(title: "Active Jobs (\(jobs.count))"))
+            lines.append("")
+            for (i, entry) in jobs.enumerated() {
+                let job = entry.state
+                lines.append("  \(bold)[\(entry.id)]\(reset) \(job.name) (\(formatBytes(job.size)))")
+                lines.append(job.recv)
+                if let start = job.procStartNanos {
+                    lines.append(processingLine(startNanos: start, percent: job.procPercent))
+                } else {
+                    lines.append(job.proc)
+                }
+                lines.append(job.send)
+                if i < jobs.count - 1 { lines.append("") }
+            }
+            lines.append("")
+        }
+
+        // Footer
+        lines.append(sectionDivider())
+        let failStr = failed > 0 ? " \(dim)·\(reset) \(red)Failed: \(failed)\(reset)" : " \(dim)·\(reset) Failed: 0"
+        lines.append("  Completed: \(completed)\(failStr)")
+        lines.append("  \(dim)Press Ctrl-C to stop.\(reset)")
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    private func paintFrame(_ frame: String) {
+        guard isColor else { return }
+        // Repaint from top each update so resize/wrap cannot drift anchored rows.
+        print("\u{1b}[H\u{1b}[J", terminator: "")
+        print(frame, terminator: "")
+        fflush(stdout)
+    }
+
+    private func redrawFrame() {
+        paintFrame(renderFrame())
+    }
+
+    func writeHeader(bridge: BridgeInfo, mtu: String, workDir: String, caffeinatePid: Int32?) {
+        lock.sync {
+            self.bridge = bridge
+            self.mtu = mtu
+            self.workDir = workDir
+            if let pid = caffeinatePid {
+                sleepStatus = "active \(dim)(pid \(pid))\(reset)"
+            } else {
+                sleepStatus = "\(yellow)failed\(reset)"
+            }
+            status = .starting
+            redrawFrame()
+        }
+    }
+
+    func listenerReady(ip: String) {
+        lock.sync {
+            if isColor {
+                status = .listening(ip: ip)
+                redrawFrame()
+            } else {
+                print("Listening on \(ip):\(port)")
+            }
+        }
+    }
+
+    func startJob(id: String, name: String, size: Int) {
+        lock.sync {
+            jobs.append((
+                id: id,
+                state: JobState(
+                    name: name,
+                    size: size,
+                    recv: pendingLine("Recv"),
+                    proc: pendingLine("Proc"),
+                    send: pendingLine("Send"),
+                    procStartNanos: nil,
+                    procPercent: nil
+                )
+            ))
+            if isColor {
+                redrawFrame()
+            } else {
+                print("[\(id)] \(name) (\(formatBytes(size)))")
+            }
+        }
+    }
+
+    func recvDone(id: String, time: Double, mbps: Double, shaOK: Bool) {
+        lock.sync {
+            let shaStr = shaOK ? "\(green)✓\(reset)" : "\(red)✗\(reset)"
+            if let idx = jobs.firstIndex(where: { $0.id == id }) {
+                jobs[idx].state.recv = String(format: "    Recv  %.3fs · %.0f MB/s · SHA %@", time, mbps, shaStr)
+                if !shaOK {
+                    jobs[idx].state.proc = skippedLine("Proc")
+                    jobs[idx].state.send = skippedLine("Send")
+                }
+            }
+            if isColor {
+                redrawFrame()
+            } else {
+                print(String(format: "  Recv  %.3fs · %.0f MB/s · SHA %@", time, mbps, shaOK ? "✓" : "✗"))
+            }
+        }
+    }
+
+    func recvFailed(id: String, time: Double) {
+        lock.sync {
+            if let idx = jobs.firstIndex(where: { $0.id == id }) {
+                jobs[idx].state.recv = String(format: "    Recv  %.3fs · 0 MB/s · SHA \(red)✗\(reset)", time)
+                jobs[idx].state.proc = skippedLine("Proc")
+                jobs[idx].state.send = skippedLine("Send")
+            }
+            if isColor {
+                redrawFrame()
+            } else {
+                print(String(format: "  Recv  %.3fs · 0 MB/s · SHA ✗", time))
+            }
+        }
+    }
+
+    func procStarted(id: String) {
+        lock.sync {
+            if let idx = jobs.firstIndex(where: { $0.id == id }) {
+                jobs[idx].state.procStartNanos = now()
+                jobs[idx].state.procPercent = nil
+            }
+            if isColor {
+                redrawFrame()
+            }
+        }
+    }
+
+    func procProgress(id: String, percent: Double) {
+        let clamped = max(0, min(100, Int((percent * 100).rounded())))
+        lock.sync {
+            if let idx = jobs.firstIndex(where: { $0.id == id }),
+               jobs[idx].state.procStartNanos != nil {
+                jobs[idx].state.procPercent = clamped
+            }
+        }
+    }
+
+    func procDone(id: String, time: Double, previewSize: Int, thumbSize: Int) {
+        lock.sync {
+            if let idx = jobs.firstIndex(where: { $0.id == id }) {
+                jobs[idx].state.procStartNanos = nil
+                jobs[idx].state.procPercent = nil
+                jobs[idx].state.proc = String(format: "    Proc  %.2fs · preview %@ · thumb %@",
+                                              time, formatBytes(previewSize), formatBytes(thumbSize))
+            }
+            if isColor {
+                redrawFrame()
+            } else {
+                print(String(format: "  Proc  %.2fs · preview %@ · thumb %@",
+                             time, formatBytes(previewSize), formatBytes(thumbSize)))
+            }
+        }
+    }
+
+    func procError(id: String, message: String) {
+        lock.sync {
+            if let idx = jobs.firstIndex(where: { $0.id == id }) {
+                jobs[idx].state.procStartNanos = nil
+                jobs[idx].state.procPercent = nil
+                jobs[idx].state.proc = "    Proc  \(red)Error: \(message)\(reset)"
+                jobs[idx].state.send = skippedLine("Send")
+            }
+            if isColor {
+                redrawFrame()
+            } else {
+                print("  Proc  Error: \(message)")
+            }
+        }
+    }
+
+    func sendDone(id: String, time: Double, shaOK: Bool) {
+        lock.sync {
+            let shaStr = shaOK ? "\(green)✓\(reset)" : "\(red)✗\(reset)"
+            if let idx = jobs.firstIndex(where: { $0.id == id }) {
+                jobs[idx].state.send = String(format: "    Send  %.3fs · SHA %@", time, shaStr)
+            }
+            if isColor {
+                redrawFrame()
+            } else {
+                print(String(format: "  Send  %.3fs · SHA %@", time, shaOK ? "✓" : "✗"))
+            }
+        }
+    }
+
+    func jobDone(id: String, success: Bool) {
+        lock.sync {
+            jobs.removeAll { $0.id == id }
+            if success { completed += 1 } else { failed += 1 }
+            if isColor {
+                redrawFrame()
+            } else {
+                print("")
+            }
+        }
+    }
+}
+
+let dashboard = Dashboard()
+
+// MARK: - System Utilities
+
+@discardableResult
+func runCommand(_ launchPath: String, _ arguments: [String]) -> (status: Int32, output: String) {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: launchPath)
+    process.arguments = arguments
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    do {
+        try process.run()
+        process.waitUntilExit()
+        let output = pipe.fileHandleForReading.readDataToEndOfFile()
+        return (process.terminationStatus, String(decoding: output, as: UTF8.self))
+    } catch {
+        return (-1, "")
+    }
+}
+
+func hasThunderboltBridgeService() -> Bool {
+    let result = runCommand("/usr/sbin/networksetup", ["-listallnetworkservices"])
+    guard result.status == 0 else { return false }
+    for rawLine in result.output.split(separator: "\n") {
+        let line = rawLine.trimmingCharacters(in: .whitespaces)
+        if line.hasPrefix("*") {
+            let disabled = line.dropFirst().trimmingCharacters(in: .whitespaces)
+            if disabled == "Thunderbolt Bridge" { return true }
+        } else if line == "Thunderbolt Bridge" {
+            return true
+        }
+    }
+    return false
+}
+
+func detectBridgeInterfaces() -> [String] {
+    var addrs: UnsafeMutablePointer<ifaddrs>?
+    guard getifaddrs(&addrs) == 0, let first = addrs else { return [] }
+    defer { freeifaddrs(first) }
+
+    var names = Set<String>()
+    var cursor: UnsafeMutablePointer<ifaddrs>? = first
+    while let current = cursor {
+        defer { cursor = current.pointee.ifa_next }
+        let name = String(cString: current.pointee.ifa_name)
+        if name.hasPrefix("bridge") {
+            names.insert(name)
+        }
+    }
+    return Array(names).sorted()
+}
+
+func detectBridgeIPv4() -> BridgeInfo? {
+    var addrs: UnsafeMutablePointer<ifaddrs>?
+    guard getifaddrs(&addrs) == 0, let first = addrs else { return nil }
+    defer { freeifaddrs(first) }
+
+    var cursor: UnsafeMutablePointer<ifaddrs>? = first
+    while let current = cursor {
+        defer { cursor = current.pointee.ifa_next }
+        let name = String(cString: current.pointee.ifa_name)
+        guard name.hasPrefix("bridge"),
+              let addr = current.pointee.ifa_addr,
+              addr.pointee.sa_family == UInt8(AF_INET)
+        else {
+            continue
+        }
+
+        var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        let rc = getnameinfo(
+            addr,
+            socklen_t(addr.pointee.sa_len),
+            &host,
+            socklen_t(host.count),
+            nil,
+            0,
+            NI_NUMERICHOST
+        )
+        if rc == 0 {
+            return BridgeInfo(interface: name, ip: String(cString: host))
+        }
+    }
+    return nil
+}
+
+func detectMTU(interfaceName: String) -> Int? {
+    let result = runCommand("/sbin/ifconfig", [interfaceName])
+    guard result.status == 0, let range = result.output.range(of: "mtu ") else { return nil }
+    let suffix = result.output[range.upperBound...]
+    let digits = suffix.prefix { $0.isNumber }
+    return Int(digits)
+}
+
+func validatedWorkDirectory(path: String) throws -> String {
+    let expanded = NSString(string: path).expandingTildeInPath
+    let standardized = NSString(string: expanded).standardizingPath
+    let resolved = NSString(string: standardized).resolvingSymlinksInPath
+    let normalized = resolved.isEmpty ? standardized : resolved
+
+    guard !normalized.isEmpty, normalized.hasPrefix("/") else {
+        throw WorkerError.startup("Work dir must be an absolute path.")
+    }
+
+    let protectedPaths: Set<String> = [
+        "/",
+        "/Applications",
+        "/Library",
+        "/System",
+        "/System/Volumes",
+        "/Users",
+        "/Volumes",
+        "/private",
+        "/private/etc",
+        "/private/var",
+        "/var",
+        "/etc",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/opt",
+        "/tmp",
+        NSHomeDirectory(),
+    ]
+    guard !protectedPaths.contains(normalized) else {
+        throw WorkerError.startup("Refusing unsafe work dir: \(normalized)")
+    }
+
+    let components = normalized.split(separator: "/", omittingEmptySubsequences: true)
+    guard components.count >= 2 else {
+        throw WorkerError.startup("Refusing top-level work dir: \(normalized)")
+    }
+
+    return normalized
+}
+
+func cleanWorkDirectory(path: String) throws {
+    let fm = FileManager.default
+    try? fm.removeItem(atPath: path)
+    try fm.createDirectory(atPath: path, withIntermediateDirectories: true)
+}
+
+func startCaffeinate() -> Process? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
+    process.arguments = ["-s"]
+    do {
+        try process.run()
+        return process
+    } catch {
+        return nil
+    }
+}
+
+// MARK: - Crypto
+
+func calculateSHA256(path: String, bufferSize: Int = 1_048_576) throws -> String {
+    let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
+    defer { try? handle.close() }
+
+    var hasher = SHA256()
+    while true {
+        let chunk = try handle.read(upToCount: bufferSize) ?? Data()
+        if chunk.isEmpty { break }
+        hasher.update(data: chunk)
+    }
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+}
+
+func isHexSHA256(_ value: String) -> Bool {
+    guard value.utf8.count == 64 else { return false }
+    for byte in value.utf8 {
+        if !((byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 70) || (byte >= 97 && byte <= 102)) {
+            return false
+        }
+    }
+    return true
+}
+
+// MARK: - Hardware Detection
+
+func sysctlInt(_ key: String) -> Int? {
+    var value: Int = 0
+    var size = MemoryLayout<Int>.size
+    guard sysctlbyname(key, &value, &size, nil, 0) == 0, value >= 1 else { return nil }
+    return value
+}
+
+func countIOServices(named name: String) -> Int? {
+    var iterator: io_iterator_t = 0
+    let matching = IOServiceNameMatching(name)
+    let kr = IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator)
+    guard kr == KERN_SUCCESS else { return nil }
+    defer { IOObjectRelease(iterator) }
+
+    var count = 0
+    while case let service = IOIteratorNext(iterator), service != 0 {
+        count += 1
+        IOObjectRelease(service)
+    }
+    guard count >= 1 else { return nil }
+    return count
+}
+
+func detectTotalCores() -> Int? { sysctlInt("hw.physicalcpu") }
+func detectPerformanceCores() -> Int? { sysctlInt("hw.perflevel0.physicalcpu") }
+func detectEfficiencyCores() -> Int? { sysctlInt("hw.perflevel1.physicalcpu") }
+func detectVideoEncodeEngines() -> Int? { countIOServices(named: "ave2") }
+func detectVideoDecodeEngines() -> Int? { countIOServices(named: "avd") }
+
+func detectChipName() -> String? {
+    var size: Int = 0
+    guard sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0) == 0, size > 0 else { return nil }
+    var buffer = [CChar](repeating: 0, count: size)
+    guard sysctlbyname("machdep.cpu.brand_string", &buffer, &size, nil, 0) == 0 else { return nil }
+    let name = String(cString: buffer)
+    return name.isEmpty ? nil : name
+}
+
+func normalizedOSVersion() -> String {
+    let version = ProcessInfo.processInfo.operatingSystemVersion
+    return "\(version.majorVersion).\(version.minorVersion)"
+}
+
+func workerSignature(
+    osVersion: String,
+    chip: String? = nil,
+    pcores: Int? = nil,
+    ecores: Int? = nil,
+    encoders: Int? = nil
+) -> String? {
+    guard let chip = chip ?? detectChipName(),
+          let pcores = pcores ?? detectPerformanceCores(),
+          let ecores = ecores ?? detectEfficiencyCores(),
+          let encoders = encoders ?? detectVideoEncodeEngines() else {
+        return nil
+    }
+    let normalizedChip = chip.trimmingCharacters(in: .whitespacesAndNewlines)
+    return "chip=\(normalizedChip);ecores=\(ecores);encoders=\(encoders);os=\(osVersion);pcores=\(pcores);preset=\(transcodePreset)"
+}
+
+private struct PriorCell: Codable {
+    let concurrency: Int
+    let videos_per_min: Double
+    let ms_per_video_p50: Int
+    let ms_per_video_p95: Int
+    let degradation_ratio: Double
+}
+
+private struct PriorMachine: Codable {
+    let signature: String
+    let ms_per_frame_c1: Double
+    let avg_corpus_frame_count: Double
+    let cells: [PriorCell]
+}
+
+private struct PriorArtifact: Codable {
+    let version: Int
+    let machines: [PriorMachine]
+}
+
+private func loadPriorMachine(for signature: String) -> PriorMachine? {
+    let env = ProcessInfo.processInfo.environment
+    var candidates: [String] = []
+    if let base = env["BASE_DIRECTORY"], !base.isEmpty {
+        candidates.append("\(NSString(string: base).expandingTildeInPath)/benchmark-prior.json")
+    }
+    candidates.append("\(FileManager.default.currentDirectoryPath)/benchmark-prior.json")
+    candidates.append("\(workDir)/benchmark-prior.json")
+
+    for path in candidates {
+        guard let data = FileManager.default.contents(atPath: path),
+              let artifact = try? JSONDecoder().decode(PriorArtifact.self, from: data),
+              artifact.version == 2 else {
+            continue
+        }
+        if let machine = artifact.machines.first(where: { $0.signature == signature }) {
+            return machine
+        }
+    }
+    return nil
+}
+
+private func degradationCurve(from cells: [PriorCell]) -> [Int: Double]? {
+    guard !cells.isEmpty else { return nil }
+    var curve: [Int: Double] = [:]
+    curve.reserveCapacity(cells.count)
+    for cell in cells {
+        curve[cell.concurrency] = cell.degradation_ratio
+    }
+    return curve
+}
+
+// MARK: - Network I/O
+
+func readExactly(_ connection: NWConnection, _ count: Int) -> Data? {
+    guard count > 0 else { return Data() }
+    var buffer = Data(capacity: count)
+    let semaphore = DispatchSemaphore(value: 0)
+    var ok = true
+
+    func receiveNext() {
+        let remaining = count - buffer.count
+        connection.receive(
+            minimumIncompleteLength: 1,
+            maximumLength: min(remaining, 16_777_216)
+        ) { data, _, isDone, error in
+            if let data, !data.isEmpty { buffer.append(data) }
+            if error != nil || (isDone && buffer.count < count) {
+                ok = false
+                semaphore.signal()
+                return
+            }
+            if buffer.count >= count {
+                semaphore.signal()
+                return
+            }
+            receiveNext()
+        }
+    }
+
+    receiveNext()
+    semaphore.wait()
+    return ok ? buffer : nil
+}
+
+func readToFile(_ connection: NWConnection, _ count: Int, _ path: String) -> Bool {
+    guard count >= 0 else { return false }
+    if count == 0 {
+        return FileManager.default.createFile(atPath: path, contents: Data())
+    }
+
+    FileManager.default.createFile(atPath: path, contents: nil)
+    guard let handle = FileHandle(forWritingAtPath: path) else { return false }
+    var received = 0
+    let semaphore = DispatchSemaphore(value: 0)
+    var ok = true
+
+    func receiveNext() {
+        let remaining = count - received
+        connection.receive(
+            minimumIncompleteLength: 1,
+            maximumLength: min(remaining, 16_777_216)
+        ) { data, _, isDone, error in
+            if let data, !data.isEmpty {
+                do {
+                    try handle.write(contentsOf: data)
+                    received += data.count
+                } catch {
+                    ok = false
+                    try? handle.close()
+                    semaphore.signal()
+                    return
+                }
+            }
+            if error != nil || (isDone && received < count) {
+                ok = false
+                try? handle.close()
+                semaphore.signal()
+                return
+            }
+            if received >= count {
+                try? handle.close()
+                semaphore.signal()
+                return
+            }
+            receiveNext()
+        }
+    }
+
+    receiveNext()
+    semaphore.wait()
+    return ok
+}
+
+func sendAll(_ connection: NWConnection, _ data: Data) -> Bool {
+    let semaphore = DispatchSemaphore(value: 0)
+    var ok = true
+    connection.send(content: data, completion: .contentProcessed { error in
+        if error != nil { ok = false }
+        semaphore.signal()
+    })
+    semaphore.wait()
+    return ok
+}
+
+func sendFileContents(_ connection: NWConnection, _ path: String) -> Bool {
+    guard let handle = FileHandle(forReadingAtPath: path) else { return false }
+    defer { try? handle.close() }
+
+    while true {
+        let chunk = (try? handle.read(upToCount: 1_048_576)) ?? Data()
+        if chunk.isEmpty { break }
+        if !sendAll(connection, chunk) { return false }
+    }
+    return true
+}
+
+func sendResponseHeader(
+    connection: NWConnection,
+    status: UInt8,
+    processNanos: UInt64,
+    previewSize: Int,
+    previewSHA: String,
+    thumbSize: Int,
+    thumbSHA: String
+) -> Bool {
+    func normalizeSHA(_ value: String) -> Data {
+        var normalized = value.lowercased()
+        if normalized.count > 64 { normalized = String(normalized.prefix(64)) }
+        if normalized.count < 64 { normalized += String(repeating: "0", count: 64 - normalized.count) }
+        return Data(normalized.utf8)
+    }
+
+    guard previewSize >= 0, previewSize <= Int(UInt32.max),
+          thumbSize >= 0, thumbSize <= Int(UInt32.max) else {
+        return false
+    }
+
+    var header = Data(capacity: 145)
+    header.append(status)
+
+    var processNanosBE = processNanos.bigEndian
+    header.append(Data(bytes: &processNanosBE, count: 8))
+
+    var previewSizeBE = UInt32(previewSize).bigEndian
+    header.append(Data(bytes: &previewSizeBE, count: 4))
+    header.append(normalizeSHA(previewSHA))
+
+    var thumbSizeBE = UInt32(thumbSize).bigEndian
+    header.append(Data(bytes: &thumbSizeBE, count: 4))
+    header.append(normalizeSHA(thumbSHA))
+
+    return sendAll(connection, header)
+}
+
+func sendFailureResponse(connection: NWConnection, processNanos: UInt64 = 0) -> Bool {
+    return sendResponseHeader(
+        connection: connection,
+        status: 0x02,
+        processNanos: processNanos,
+        previewSize: 0,
+        previewSHA: zeroSHA256,
+        thumbSize: 0,
+        thumbSHA: zeroSHA256
+    )
+}
+
+// MARK: - Tick V2 Protocol
+
+private let tickV2MimeTag = "#kiko-v2:"
+
+private struct TickV2Context {
+    let baseMime: String
+    let jobHandle: UInt32?
+    let sessionID: UInt32?
+}
+
+private final class TickHeartbeatController: @unchecked Sendable {
+    private let stateLock = NSLock()
+    private let emitLock = NSLock()
+    private var runningProgress: Float
+    private var estRemainingMS: UInt32
+    private var stopped = false
+
+    private let tickStartNanos: UInt64
+
+    init(progress: Float, estRemainingMS: UInt32, tickStartNanos: UInt64) {
+        self.tickStartNanos = tickStartNanos
+        self.runningProgress = progress
+        self.estRemainingMS = estRemainingMS
+    }
+
+    func updateProgress(_ progress: Float) {
+        let elapsedMS = UInt32(min((now() - tickStartNanos) / 1_000_000, UInt64(UInt32.max)))
+        let estimate = estimateRemainingMS(elapsedMS: elapsedMS, progress: progress)
+        update(progress: progress, estRemainingMS: estimate)
+    }
+
+    func update(progress: Float, estRemainingMS: UInt32) {
+        stateLock.lock()
+        if progress > runningProgress {
+            runningProgress = progress
+        }
+        self.estRemainingMS = estRemainingMS
+        stateLock.unlock()
+    }
+
+    @discardableResult
+    func emitHeartbeat(_ emit: (_ progress: Float, _ estRemainingMS: UInt32) -> Void) -> Bool {
+        emitLock.lock()
+        stateLock.lock()
+        let shouldEmit = !stopped
+        let progress = runningProgress
+        let remaining = estRemainingMS
+        stateLock.unlock()
+        if shouldEmit {
+            emit(progress, remaining)
+        }
+        emitLock.unlock()
+        return shouldEmit
+    }
+
+    func emitControl(_ emit: () -> Void) {
+        emitLock.lock()
+        emit()
+        emitLock.unlock()
+    }
+
+    func stopHeartbeats() {
+        stateLock.lock()
+        stopped = true
+        stateLock.unlock()
+        // Barrier to ensure no heartbeat tick is in-flight when caller continues.
+        emitLock.lock()
+        emitLock.unlock()
+    }
+
+    func latestProgress() -> Float {
+        stateLock.lock()
+        let progress = runningProgress
+        stateLock.unlock()
+        return progress
+    }
+}
+
+private func estimateRemainingMS(elapsedMS: UInt32, progress: Float) -> UInt32 {
+    let clampedProgress = min(max(progress, 0), 1)
+    guard clampedProgress > 0.01, clampedProgress < 0.999 else { return 0 }
+    let elapsed = Double(elapsedMS)
+    let totalEstimate = elapsed / Double(clampedProgress)
+    let remaining = max(0, totalEstimate - elapsed)
+    return UInt32(min(remaining.rounded(), Double(UInt32.max)))
+}
+
+private func parseTickV2Context(from mime: String) -> TickV2Context {
+    guard let tagRange = mime.range(of: tickV2MimeTag) else {
+        return TickV2Context(baseMime: mime, jobHandle: nil, sessionID: nil)
+    }
+
+    let baseMime = String(mime[..<tagRange.lowerBound])
+    let metadata = String(mime[tagRange.upperBound...])
+    var parsedHandle: UInt32?
+    var parsedSession: UInt32?
+
+    for pair in metadata.split(separator: ",") {
+        let parts = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { continue }
+        let key = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if key == "h", let handle = UInt32(value) {
+            parsedHandle = handle
+        } else if key == "s", let session = UInt32(value) {
+            parsedSession = session
+        }
+    }
+
+    return TickV2Context(baseMime: baseMime, jobHandle: parsedHandle, sessionID: parsedSession)
+}
+
+func sendTickV2(
+    connection: NWConnection,
+    status: UInt8,
+    jobHandle: UInt32,
+    sessionID: UInt32,
+    errorClass: UInt8,
+    progress: Float,
+    elapsedMS: UInt32,
+    estRemainingMS: UInt32
+) -> Bool {
+    var frame = Data(capacity: 24)
+    frame.append(0x02) // version
+    frame.append(status)
+
+    var jobHandleBE = jobHandle.bigEndian
+    frame.append(Data(bytes: &jobHandleBE, count: 4))
+
+    var sessionIDBE = sessionID.bigEndian
+    frame.append(Data(bytes: &sessionIDBE, count: 4))
+
+    frame.append(errorClass)
+    frame.append(0x00) // reserved
+
+    let clampedProgress = min(max(progress, 0), 1)
+    var progressBitsBE = clampedProgress.bitPattern.bigEndian
+    frame.append(Data(bytes: &progressBitsBE, count: 4))
+
+    var elapsedMSBE = elapsedMS.bigEndian
+    frame.append(Data(bytes: &elapsedMSBE, count: 4))
+
+    var estRemainingMSBE = estRemainingMS.bigEndian
+    frame.append(Data(bytes: &estRemainingMSBE, count: 4))
+
+    return sendAll(connection, frame)
+}
+
+// MARK: - Media Processing
+
+func generateThumbnail(sourcePath: String, outputPath: String) async throws {
+    let asset = AVURLAsset(url: URL(fileURLWithPath: sourcePath))
+    let generator = AVAssetImageGenerator(asset: asset)
+    generator.appliesPreferredTrackTransform = true
+    generator.maximumSize = CGSize(width: thumbMaxSize, height: thumbMaxSize)
+    let duration = try await asset.load(.duration)
+    let time = CMTime(seconds: min(thumbTime, duration.seconds), preferredTimescale: 600)
+    let image = try await generator.image(at: time).image
+
+    try autoreleasepool {
+        let url = URL(fileURLWithPath: outputPath)
+        guard let destination = CGImageDestinationCreateWithURL(
+            url as CFURL,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else {
+            throw WorkerError.processing("Failed to create thumbnail destination")
+        }
+
+        CGImageDestinationAddImage(destination, image, [
+            kCGImageDestinationLossyCompressionQuality: thumbQuality,
+            kCGImageDestinationOptimizeColorForSharing: true,
+        ] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            throw WorkerError.processing("Failed to finalize thumbnail")
+        }
+    }
+}
+
+func transcode(sourcePath: String, outputPath: String, onProgress: (@Sendable (Double) -> Void)? = nil) async throws {
+    let outputURL = URL(fileURLWithPath: outputPath)
+    try? FileManager.default.removeItem(at: outputURL)
+
+    let asset = AVURLAsset(url: URL(fileURLWithPath: sourcePath))
+    guard let session = AVAssetExportSession(asset: asset, presetName: transcodePreset) else {
+        throw WorkerError.processing("Failed to create AVAssetExportSession")
+    }
+    session.shouldOptimizeForNetworkUse = true
+
+    try await withThrowingTaskGroup(of: Void.self) { group in
+        group.addTask {
+            try await session.export(to: outputURL, as: .mp4)
+        }
+        group.addTask {
+            for await state in session.states(updateInterval: 0.25) {
+                if Task.isCancelled { return }
+                if case .exporting(let progress) = state {
+                    onProgress?(progress.fractionCompleted)
+                }
+            }
+        }
+        group.addTask {
+            try await Task.sleep(for: .seconds(transcodeTimeout))
+            session.cancelExport()
+            throw WorkerError.processing("Transcode timeout")
+        }
+        try await group.next()
+        group.cancelAll()
+    }
+}
+
+// MARK: - Connection Handler
+
+func handleConnection(_ connection: NWConnection) {
+    defer { connection.cancel() }
+
+    while true {
+        guard let requestHeader = readExactly(connection, 74) else {
+            if !isColor { print("Read failed (request header)") }
+            return
+        }
+
+        let fileSizeU64 = requestHeader.withUnsafeBytes {
+            $0.loadUnaligned(fromByteOffset: 0, as: UInt64.self).bigEndian
+        }
+        guard fileSizeU64 <= UInt64(Int.max) else {
+            _ = sendFailureResponse(connection: connection)
+            return
+        }
+        let fileSize = Int(fileSizeU64)
+
+        let shaData = requestHeader.subdata(in: 8..<72)
+        guard let expectedSHA = String(data: shaData, encoding: .utf8), isHexSHA256(expectedSHA) else {
+            _ = sendFailureResponse(connection: connection)
+            return
+        }
+
+        let nameLen = Int(requestHeader.withUnsafeBytes {
+            $0.loadUnaligned(fromByteOffset: 72, as: UInt16.self).bigEndian
+        })
+
+        guard let nameData = readExactly(connection, nameLen),
+              let rawName = String(data: nameData, encoding: .utf8)
+        else {
+            _ = sendFailureResponse(connection: connection)
+            return
+        }
+
+        guard let mimeLenData = readExactly(connection, 2) else {
+            _ = sendFailureResponse(connection: connection)
+            return
+        }
+        let mimeLen = Int(mimeLenData.withUnsafeBytes {
+            $0.loadUnaligned(fromByteOffset: 0, as: UInt16.self).bigEndian
+        })
+        guard let mimeData = readExactly(connection, mimeLen) else {
+            _ = sendFailureResponse(connection: connection)
+            return
+        }
+        let rawMime = String(data: mimeData, encoding: .utf8) ?? ""
+        let tickContext = parseTickV2Context(from: rawMime)
+        let mime = tickContext.baseMime
+
+        if fileSize == 0
+            && expectedSHA == zeroSHA256
+            && rawName == "__kiko_caps__"
+            && mime == "application/x-kiko-caps+json"
+        {
+            struct CapsResponse: Encodable {
+                let total_cores: Int?
+                let video_encode_engines: Int?
+                let chip_name: String?
+                let performance_cores: Int?
+                let efficiency_cores: Int?
+                let video_decode_engines: Int?
+                let os_version: String
+                let worker_signature: String?
+                let ms_per_frame_c1: Double?
+                let degradation_curve: [Int: Double]?
+                let prior_cells: [PriorCell]
+                let tick_version: Int
+            }
+
+            let osVersion = normalizedOSVersion()
+            let chipName = detectChipName()
+            let pcores = detectPerformanceCores()
+            let ecores = detectEfficiencyCores()
+            let encoders = detectVideoEncodeEngines()
+            let signature = workerSignature(osVersion: osVersion, chip: chipName, pcores: pcores, ecores: ecores, encoders: encoders)
+            let priorMachine = signature.flatMap(loadPriorMachine(for:))
+            let priorCells = priorMachine?.cells ?? []
+            let caps = CapsResponse(
+                total_cores: detectTotalCores(),
+                video_encode_engines: encoders,
+                chip_name: chipName,
+                performance_cores: pcores,
+                efficiency_cores: ecores,
+                video_decode_engines: detectVideoDecodeEngines(),
+                os_version: osVersion,
+                worker_signature: signature,
+                ms_per_frame_c1: priorMachine?.ms_per_frame_c1,
+                degradation_curve: degradationCurve(from: priorCells),
+                prior_cells: priorCells,
+                tick_version: 2
+            )
+            guard let payload = try? JSONEncoder().encode(caps) else { return }
+            let payloadSHA = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+            _ = sendResponseHeader(
+                connection: connection,
+                status: 0x03,
+                processNanos: 0,
+                previewSize: payload.count,
+                previewSHA: payloadSHA,
+                thumbSize: 0,
+                thumbSHA: zeroSHA256
+            ) && sendAll(connection, payload)
+            return
+        }
+
+        let sanitizedName = URL(fileURLWithPath: rawName).lastPathComponent
+        let filename = sanitizedName.isEmpty ? "video.mov" : sanitizedName
+        let jobId = String(UUID().uuidString.prefix(8))
+        let inputPath = "\(workDir)/\(jobId)_\(filename)"
+        let previewPath = "\(workDir)/\(jobId)_preview.mp4"
+        let thumbPath = "\(workDir)/\(jobId)_thumb.jpg"
+
+        dashboard.startJob(id: jobId, name: filename, size: fileSize)
+
+        let tickStart = now()
+        func elapsedTickMS() -> UInt32 {
+            UInt32(min((now() - tickStart) / 1_000_000, UInt64(UInt32.max)))
+        }
+        func emitTick(status: UInt8, errorClass: UInt8, progress: Float, estRemainingMS: UInt32) {
+            guard let jobHandle = tickContext.jobHandle, let sessionID = tickContext.sessionID else { return }
+            _ = sendTickV2(
+                connection: connection,
+                status: status,
+                jobHandle: jobHandle,
+                sessionID: sessionID,
+                errorClass: errorClass,
+                progress: progress,
+                elapsedMS: elapsedTickMS(),
+                estRemainingMS: estRemainingMS
+            )
+        }
+        func emitControlTick(status: UInt8, errorClass: UInt8, progress: Float, estRemainingMS: UInt32) {
+            if let heartbeatController {
+                heartbeatController.emitControl {
+                    emitTick(
+                        status: status,
+                        errorClass: errorClass,
+                        progress: progress,
+                        estRemainingMS: estRemainingMS
+                    )
+                }
+                return
+            }
+            emitTick(status: status, errorClass: errorClass, progress: progress, estRemainingMS: estRemainingMS)
+        }
+
+        let heartbeatController: TickHeartbeatController?
+        var heartbeatTimer: DispatchSourceTimer?
+        if tickContext.jobHandle != nil, tickContext.sessionID != nil {
+            let initialProgress: Float = 0.02
+            let initialEstimate = estimateRemainingMS(elapsedMS: elapsedTickMS(), progress: initialProgress)
+            let controller = TickHeartbeatController(progress: initialProgress, estRemainingMS: initialEstimate, tickStartNanos: tickStart)
+            heartbeatController = controller
+            let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+            timer.schedule(deadline: .now() + 0.25, repeating: 0.25, leeway: .milliseconds(50))
+            timer.setEventHandler {
+                controller.emitHeartbeat { progress, estRemainingMS in
+                    emitTick(
+                        status: 0x01,
+                        errorClass: 0x00,
+                        progress: progress,
+                        estRemainingMS: estRemainingMS
+                    )
+                }
+            }
+            timer.resume()
+            heartbeatTimer = timer
+            emitControlTick(status: 0x01, errorClass: 0x00, progress: initialProgress, estRemainingMS: initialEstimate)
+        } else {
+            heartbeatController = nil
+            heartbeatTimer = nil
+        }
+        func stopHeartbeat() {
+            heartbeatController?.stopHeartbeats()
+            heartbeatTimer?.cancel()
+        }
+        func lastHeartbeatProgress() -> Float {
+            heartbeatController?.latestProgress() ?? 0
+        }
+        func failJob(errorClass: UInt8, processNanos: UInt64 = 0, cleanupPaths: [String]) {
+            stopHeartbeat()
+            emitControlTick(status: 0x03, errorClass: errorClass, progress: lastHeartbeatProgress(), estRemainingMS: 0)
+            let sendStart = now()
+            _ = sendFailureResponse(connection: connection, processNanos: processNanos)
+            let sendSeconds = Double(now() - sendStart) / 1e9
+            dashboard.sendDone(id: jobId, time: sendSeconds, shaOK: false)
+            for path in cleanupPaths { try? FileManager.default.removeItem(atPath: path) }
+            dashboard.jobDone(id: jobId, success: false)
+        }
+
+        // Phase 1: Receive
+        let receiveStart = now()
+        guard readToFile(connection, fileSize, inputPath) else {
+            let seconds = Double(now() - receiveStart) / 1e9
+            dashboard.recvFailed(id: jobId, time: seconds)
+            failJob(errorClass: 0x01, cleanupPaths: [inputPath])
+            return
+        }
+        let receiveSeconds = Double(now() - receiveStart) / 1e9
+        let receiveMBps = receiveSeconds > 0 ? Double(fileSize) / receiveSeconds / 1e6 : 0
+        let actualSHA: String
+        do {
+            actualSHA = try calculateSHA256(path: inputPath)
+        } catch {
+            dashboard.recvDone(id: jobId, time: receiveSeconds, mbps: receiveMBps, shaOK: false)
+            failJob(errorClass: 0x01, cleanupPaths: [inputPath])
+            return
+        }
+        let receiveSHAOK = actualSHA.lowercased() == expectedSHA.lowercased()
+        dashboard.recvDone(id: jobId, time: receiveSeconds, mbps: receiveMBps, shaOK: receiveSHAOK)
+
+        guard receiveSHAOK else {
+            failJob(errorClass: 0x02, cleanupPaths: [inputPath])
+            return
+        }
+
+        // Phase 2: Process
+        heartbeatController?.updateProgress(0.20)
+        emitControlTick(
+            status: 0x01,
+            errorClass: 0x00,
+            progress: 0.20,
+            estRemainingMS: estimateRemainingMS(elapsedMS: elapsedTickMS(), progress: 0.20)
+        )
+        let processStart = now()
+        dashboard.procStarted(id: jobId)
+        let processSemaphore = DispatchSemaphore(value: 0)
+        let resultQueue = DispatchQueue(label: "job-result-\(jobId)")
+        var processError: Error?
+        Task {
+            do {
+                async let thumbnailTask: Void = generateThumbnail(sourcePath: inputPath, outputPath: thumbPath)
+                async let previewTask: Void = transcode(
+                    sourcePath: inputPath,
+                    outputPath: previewPath
+                ) { percent in
+                    dashboard.procProgress(id: jobId, percent: percent)
+                    heartbeatController?.updateProgress(Float(0.20 + percent * 0.70))
+                }
+                _ = try await (thumbnailTask, previewTask)
+            } catch {
+                resultQueue.sync { processError = error }
+                dashboard.procError(id: jobId, message: "\(error)")
+            }
+            processSemaphore.signal()
+        }
+        processSemaphore.wait()
+        let processNanos = now() - processStart
+        let errorResult = resultQueue.sync { processError }
+
+        let fm = FileManager.default
+        let previewSize = (try? fm.attributesOfItem(atPath: previewPath)[.size] as? Int) ?? 0
+        let thumbSize = (try? fm.attributesOfItem(atPath: thumbPath)[.size] as? Int) ?? 0
+
+        if errorResult == nil {
+            dashboard.procDone(id: jobId, time: Double(processNanos) / 1e9,
+                               previewSize: previewSize, thumbSize: thumbSize)
+        }
+
+        guard errorResult == nil, previewSize > 0, thumbSize > 0 else {
+            failJob(errorClass: 0x01, processNanos: processNanos, cleanupPaths: [inputPath, previewPath, thumbPath])
+            return
+        }
+
+        guard let previewSHA = try? calculateSHA256(path: previewPath),
+              let thumbSHA = try? calculateSHA256(path: thumbPath)
+        else {
+            failJob(errorClass: 0x01, processNanos: processNanos, cleanupPaths: [inputPath, previewPath, thumbPath])
+            return
+        }
+
+        // Phase 3: Send
+        stopHeartbeat()
+        emitControlTick(status: 0x01, errorClass: 0x00, progress: 0.90, estRemainingMS: 0)
+        // Emit COMPLETE before response payload so coordinator can finish tick stream cleanly.
+        emitControlTick(status: 0x02, errorClass: 0x00, progress: 1.0, estRemainingMS: 0)
+        let sendStart = now()
+        let headerOK = sendResponseHeader(
+            connection: connection,
+            status: 0x01,
+            processNanos: processNanos,
+            previewSize: previewSize,
+            previewSHA: previewSHA,
+            thumbSize: thumbSize,
+            thumbSHA: thumbSHA
+        )
+        let payloadOK = headerOK
+            && sendFileContents(connection, previewPath)
+            && sendFileContents(connection, thumbPath)
+        let sendSeconds = Double(now() - sendStart) / 1e9
+        dashboard.sendDone(id: jobId, time: sendSeconds, shaOK: payloadOK)
+
+        if !payloadOK {
+            emitControlTick(status: 0x03, errorClass: 0x01, progress: 0, estRemainingMS: 0)
+        }
+
+        try? fm.removeItem(atPath: inputPath)
+        try? fm.removeItem(atPath: previewPath)
+        try? fm.removeItem(atPath: thumbPath)
+
+        dashboard.jobDone(id: jobId, success: payloadOK)
+    }
+}
+
+// MARK: - Startup
+
+struct StartupInfo {
+    let bridge: BridgeInfo
+    let mtu: String
+    let safeWorkDir: String
+    let caffeinate: Process?
+}
+
+func startupChecks() throws -> StartupInfo {
+    guard hasThunderboltBridgeService() else {
+        throw WorkerError.startup("Thunderbolt Bridge service not detected in networksetup.")
+    }
+
+    let bridgeInterfaces = detectBridgeInterfaces()
+    guard !bridgeInterfaces.isEmpty else {
+        throw WorkerError.startup("No bridge* interface found.")
+    }
+    guard let bridge = detectBridgeIPv4() else {
+        throw WorkerError.startup("Bridge interface found but no IPv4 assigned.")
+    }
+
+    let mtuStr: String
+    if let mtu = detectMTU(interfaceName: bridge.interface) {
+        if mtu == 9000 {
+            mtuStr = "9000"
+        } else {
+            mtuStr = "\(yellow)\(mtu)\(reset) \(dim)(recommended 9000)\(reset)"
+        }
+    } else {
+        mtuStr = "\(yellow)unknown\(reset)"
+    }
+
+    let safeWorkDir = try validatedWorkDirectory(path: workDir)
+    try cleanWorkDirectory(path: safeWorkDir)
+
+    let caffeinate = startCaffeinate()
+
+    return StartupInfo(bridge: bridge, mtu: mtuStr, safeWorkDir: safeWorkDir, caffeinate: caffeinate)
+}
+
+// MARK: - Main
+
+if !isColor {
+    print("kiko-media Thunderbolt Worker")
+}
+
+do {
+    let info = try startupChecks()
+    workDir = info.safeWorkDir
+    // Ensure caffeinate is terminated on exit
+    caffeinateProcess = info.caffeinate
+    if caffeinateProcess != nil {
+        atexit {
+            caffeinateProcess?.terminate()
+        }
+        for sig: Int32 in [SIGINT, SIGTERM] {
+            signal(sig) { _ in
+                print("\u{1b}[H\u{1b}[2J\u{1b}[3J", terminator: "")
+                print("Worker stopped.")
+                fflush(stdout)
+                exit(0)
+            }
+        }
+    }
+
+    dashboard.writeHeader(
+        bridge: info.bridge,
+        mtu: info.mtu,
+        workDir: info.safeWorkDir,
+        caffeinatePid: info.caffeinate?.processIdentifier
+    )
+
+    guard let listenerPort = NWEndpoint.Port(rawValue: port) else {
+        throw WorkerError.startup("Invalid port: \(port)")
+    }
+    let parameters = NWParameters.tcp
+    parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(info.bridge.ip), port: listenerPort)
+    parameters.allowLocalEndpointReuse = true
+
+    let listener = try NWListener(using: parameters)
+    listener.stateUpdateHandler = { state in
+        switch state {
+        case .ready:
+            dashboard.listenerReady(ip: info.bridge.ip)
+        case .failed(let error):
+            print("Listener failed: \(error)")
+            exit(1)
+        default:
+            break
+        }
+    }
+    listener.newConnectionHandler = { connection in
+        connection.stateUpdateHandler = { state in
+            if case .ready = state {
+                queue.async {
+                    handleConnection(connection)
+                }
+            }
+        }
+        connection.start(queue: queue)
+    }
+    listener.start(queue: queue)
+    dispatchMain()
+} catch {
+    print("Startup failed: \(error)")
+    exit(1)
+}

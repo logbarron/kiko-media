@@ -1,0 +1,2410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Kiko</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/logo.webp">
+  <!-- tus-js-client (self-hosted for privacy) -->
+  <script src="/tus.min.js"></script>
+  <!-- Cloudflare Turnstile -->
+  <link rel="preconnect" href="https://challenges.cloudflare.com">
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"></script>
+  <style>
+    /* ========================================
+       CONFIGURATION
+       ======================================== */
+    :root {
+      --grid-gap: 2px;
+      --columns: 3;
+      --bar-height: 56px;
+      --transition-speed: 0.2s;
+    }
+
+    @media (min-width: 600px) { :root { --columns: 4; } }
+    @media (min-width: 900px) { :root { --columns: 5; } }
+    @media (min-width: 1200px) { :root { --columns: 6; } }
+    @media (min-width: 1600px) { :root { --columns: 7; } }
+    @media (min-width: 2000px) { :root { --columns: 8; } }
+
+    /* ========================================
+       THEME PALETTE (values defined once)
+       ======================================== */
+    :root {
+      /* Light palette */
+      --light-bg: #ffffff;
+      --light-bg-secondary: #f5f5f7;
+      --light-text: #1d1d1f;
+      --light-text-muted: #86868b;
+      --light-border: #d2d2d7;
+      --light-overlay: rgba(255, 255, 255, 0.85);
+      --light-modal-bg: rgba(255, 255, 255, 0.95);
+      --light-button-bg: #1d1d1f;
+      --light-button-text: #ffffff;
+      --light-button-secondary-text: #1d1d1f;
+      --light-accent: #C9A86C;
+
+      /* Dark palette */
+      --dark-bg: #000000;
+      --dark-bg-secondary: #1c1c1e;
+      --dark-text: #f5f5f7;
+      --dark-text-muted: #86868b;
+      --dark-border: #38383a;
+      --dark-overlay: rgba(0, 0, 0, 0.85);
+      --dark-modal-bg: rgba(28, 28, 30, 0.95);
+      --dark-button-bg: #f5f5f7;
+      --dark-button-text: #1d1d1f;
+      --dark-button-secondary-text: #f5f5f7;
+      --dark-accent: #D4B896;
+
+      /* Active theme (light by default) */
+      --bg: var(--light-bg);
+      --bg-secondary: var(--light-bg-secondary);
+      --text: var(--light-text);
+      --text-muted: var(--light-text-muted);
+      --border: var(--light-border);
+      --overlay: var(--light-overlay);
+      --modal-bg: var(--light-modal-bg);
+      --button-bg: var(--light-button-bg);
+      --button-text: var(--light-button-text);
+      --button-secondary-bg: transparent;
+      --button-secondary-text: var(--light-button-secondary-text);
+      --accent: var(--light-accent);
+    }
+
+    /* Dark theme - explicit setting */
+    :root[data-theme="dark"] {
+      --bg: var(--dark-bg);
+      --bg-secondary: var(--dark-bg-secondary);
+      --text: var(--dark-text);
+      --text-muted: var(--dark-text-muted);
+      --border: var(--dark-border);
+      --overlay: var(--dark-overlay);
+      --modal-bg: var(--dark-modal-bg);
+      --button-bg: var(--dark-button-bg);
+      --button-text: var(--dark-button-text);
+      --button-secondary-text: var(--dark-button-secondary-text);
+      --accent: var(--dark-accent);
+    }
+
+    /* Dark theme - system preference (when no explicit theme set) */
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme]) {
+        --bg: var(--dark-bg);
+        --bg-secondary: var(--dark-bg-secondary);
+        --text: var(--dark-text);
+        --text-muted: var(--dark-text-muted);
+        --border: var(--dark-border);
+        --overlay: var(--dark-overlay);
+        --modal-bg: var(--dark-modal-bg);
+        --button-bg: var(--dark-button-bg);
+        --button-text: var(--dark-button-text);
+        --button-secondary-text: var(--dark-button-secondary-text);
+        --accent: var(--dark-accent);
+      }
+    }
+
+    /* ========================================
+       RESET & BASE
+       ======================================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; overscroll-behavior-y: contain; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+      transition: background var(--transition-speed), color var(--transition-speed);
+    }
+
+    /* ========================================
+       LAYOUT
+       ======================================== */
+    .app { height: 100%; display: flex; flex-direction: column; overscroll-behavior-y: contain; }
+
+    /* ========================================
+       TOP BAR
+       ======================================== */
+    .bar {
+      height: var(--bar-height);
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg);
+      border-bottom: 0.5px solid var(--border);
+      flex-shrink: 0;
+      z-index: 100;
+    }
+
+    .bar-logo-container { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .bar-logo { height: 32px; width: auto; }
+    .bar-logo.light { display: block; }
+    .bar-logo.dark { display: none; }
+    :root[data-theme="dark"] .bar-logo.light { display: none; }
+    :root[data-theme="dark"] .bar-logo.dark { display: block; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme]) .bar-logo.light { display: none; }
+      :root:not([data-theme]) .bar-logo.dark { display: block; }
+    }
+
+    .bar-actions { display: flex; gap: 8px; }
+    .bar-btn {
+      width: 36px; height: 36px;
+      border-radius: 50%; border: none;
+      background: var(--bg-secondary);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.15s, background 0.15s;
+    }
+    .bar-btn:active { transform: scale(0.92); }
+    .bar-btn:active svg { fill: var(--accent); color: var(--accent); }
+    .bar-btn svg { width: 20px; height: 20px; fill: var(--text); color: var(--text); }
+
+    /* ========================================
+       GRID
+       ======================================== */
+    .grid-container {
+      flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain; touch-action: pan-y;
+    }
+    .grid {
+      display: grid; grid-template-columns: repeat(var(--columns), 1fr); gap: var(--grid-gap); padding: var(--grid-gap);
+      transform: translateY(0px); will-change: transform;
+    }
+    .grid.pull-snap { transition: transform 0.2s ease-out; }
+    .grid-item {
+      aspect-ratio: 1; overflow: hidden; position: relative; cursor: pointer;
+      background: var(--bg-secondary); content-visibility: auto; contain-intrinsic-size: 200px 200px;
+    }
+    .grid-item img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.2s; }
+    .grid-item:active img { transform: scale(0.97); }
+    .grid.is-grayed .grid-item { opacity: 0.4; }
+    .grid-item .video-badge {
+      position: absolute; bottom: 6px; right: 6px;
+      background: rgba(0, 0, 0, 0.6); color: white;
+      font-size: 11px; font-weight: 500; padding: 2px 6px; border-radius: 4px;
+      backdrop-filter: blur(4px);
+    }
+    .grid-item .heart-badge {
+      position: absolute; bottom: 6px; left: 6px;
+      background: rgba(0, 0, 0, 0.6); color: white;
+      font-size: 11px; font-weight: 500; padding: 2px 6px; border-radius: 4px;
+      backdrop-filter: blur(4px);
+    }
+    .grid-item.moderated img { filter: grayscale(100%); opacity: 0.55; }
+    .grid-item .hidden-badge {
+      position: absolute; top: 6px; left: 6px;
+      background: rgba(0, 0, 0, 0.6); color: white;
+      font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+      padding: 3px 6px; border-radius: 4px;
+      backdrop-filter: blur(4px);
+    }
+
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; padding: 40px; text-align: center; color: var(--text-muted);
+      grid-column: 1 / -1;
+    }
+    .empty-state svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.4; fill: var(--text-muted); }
+    .empty-state p { font-size: 15px; }
+
+    /* ========================================
+       MODAL OVERLAY
+       ======================================== */
+    .modal-overlay {
+      position: fixed; inset: 0; background: var(--overlay);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 200; opacity: 0; visibility: hidden;
+      transition: opacity 0.25s, visibility 0.25s;
+    }
+    .modal-overlay.active { opacity: 1; visibility: visible; }
+    .modal {
+      width: 280px; padding: 32px 24px; background: var(--modal-bg);
+      border-radius: 20px; text-align: center;
+      transform: scale(0.95); transition: transform 0.25s;
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12);
+    }
+    .modal-overlay.active .modal { transform: scale(1); }
+    .modal-title { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 24px; }
+    .modal-actions { display: flex; flex-direction: column; gap: 12px; }
+    .modal-btn {
+      width: 100%; padding: 14px 20px; border-radius: 12px;
+      font-size: 17px; font-weight: 500; cursor: pointer;
+      transition: transform 0.15s, opacity 0.15s;
+      border: 1.5px solid var(--border);
+    }
+    .modal-btn:active { transform: scale(0.97); }
+    .modal-btn.primary { background: var(--button-bg); color: var(--button-text); border: none; }
+    .modal-btn.secondary { background: var(--button-secondary-bg); color: var(--button-secondary-text); }
+
+    /* Event gate (conditional on GATE_ENABLED) */
+    .modal-gate { display: none; width: 100%; margin-bottom: 24px; }
+    .modal-gate.active { display: block; }
+    .modal-gate-input {
+      width: 100%; padding: 14px 20px; border-radius: 12px;
+      border: 1.5px solid var(--border); background: var(--bg-secondary);
+      color: var(--text); font-size: 16px; font-family: inherit;
+      outline: none; transition: border-color 0.2s;
+    }
+    .modal-gate-input::placeholder { color: var(--text-muted); }
+    .modal-gate-input:focus { border-color: var(--accent); }
+    .modal-gate-input.error { border-color: #ff3b30; }
+    .modal-gate-error { display: none; font-size: 13px; color: #ff3b30; margin-top: 8px; text-align: center; }
+    .modal-gate.active .modal-gate-error.visible { display: block; }
+    .modal-gate-go { display: none; width: 100%; margin-top: 12px; }
+
+    /* Verification states container */
+    .modal-verify {
+      min-height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    .modal-spinner { display: none; }
+    .modal-spinner .spinner { width: 32px; height: 32px; }
+    .modal-turnstile { display: none; min-height: 140px; }
+    .modal-error { display: none; font-size: 15px; color: var(--text-muted); margin: 0; }
+
+    /* Retry button container */
+    .modal-retry { display: none; }
+
+    /* State: verifying — show spinner, hide buttons */
+    .modal[data-state="verifying"] .modal-spinner { display: flex; }
+    .modal[data-state="verifying"] .modal-actions { display: none; }
+    .modal[data-state="verifying"] .modal-retry { display: none; }
+
+    /* State: interaction — show Turnstile widget, hide buttons */
+    .modal[data-state="interaction"] .modal-turnstile { display: block; }
+    .modal[data-state="interaction"] .modal-actions { display: none; }
+    .modal[data-state="interaction"] .modal-retry { display: none; }
+
+    /* State: verified — hide verify container + gate, show original buttons */
+    .modal[data-state="verified"] .modal-gate { display: none; }
+    .modal[data-state="verified"] .modal-verify { display: none; }
+    .modal[data-state="verified"] .modal-actions { display: flex; }
+    .modal[data-state="verified"] .modal-retry { display: none; }
+
+    /* State: ready — Turnstile solved, gate input + Go visible, waiting for user */
+    .modal[data-state="ready"] .modal-gate-go { display: block; }
+    .modal[data-state="ready"] .modal-verify { display: none; }
+    .modal[data-state="ready"] .modal-actions { display: none; }
+    .modal[data-state="ready"] .modal-retry { display: none; }
+
+    /* State: failed — show error message and retry button, hide original buttons */
+    .modal[data-state="failed"] .modal-error { display: block; }
+    .modal[data-state="failed"] .modal-spinner { display: none; }
+    .modal[data-state="failed"] .modal-turnstile { display: none; }
+    .modal[data-state="failed"] .modal-actions { display: none; }
+    .modal[data-state="failed"] .modal-retry { display: flex; flex-direction: column; gap: 12px; }
+
+    /* ========================================
+       LIGHTBOX
+       ======================================== */
+    .lightbox {
+      position: fixed; inset: 0; background: var(--bg); z-index: 300;
+      display: flex; flex-direction: column;
+      opacity: 0; visibility: hidden; transition: opacity 0.25s, visibility 0.25s;
+    }
+    .lightbox.active { opacity: 1; visibility: visible; }
+    .lightbox-header {
+      height: var(--bar-height); padding: 0 16px;
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+    }
+    .lightbox-close {
+      width: 36px; height: 36px; border-radius: 50%; border: none;
+      background: var(--bg-secondary); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.15s;
+    }
+    .lightbox-close:active { transform: scale(0.92); }
+    .lightbox-close svg { width: 20px; height: 20px; fill: var(--text); }
+    .lightbox-moderation {
+      display: none; align-items: center; gap: 8px;
+      font-size: 13px; color: var(--text);
+    }
+    .lightbox-moderation.active { display: flex; }
+    .visibility-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      cursor: pointer; user-select: none;
+    }
+    .visibility-toggle input { width: 16px; height: 16px; }
+    .lightbox-body { flex: 1; display: flex; align-items: center; position: relative; overflow: hidden; min-width: 0; min-height: 0; }
+    .lightbox-content {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      overflow: hidden; padding: 16px; touch-action: pan-y pinch-zoom;
+      min-width: 0; min-height: 0; width: 100%; height: 100%;
+    }
+    .lightbox-content img, .lightbox-content video {
+      max-width: 100%; max-height: 100%; width: auto; height: auto;
+      object-fit: contain; border-radius: 4px;
+    }
+    .lightbox-nav {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      width: 44px; height: 44px; border-radius: 50%; border: none;
+      background: var(--bg-secondary); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 10; transition: opacity 0.2s, transform 0.15s;
+    }
+    .lightbox-nav:active { transform: translateY(-50%) scale(0.92); }
+    .lightbox-nav:disabled { opacity: 0.3; cursor: default; }
+    .lightbox-nav svg { width: 24px; height: 24px; fill: var(--text); }
+    .lightbox-prev { left: 12px; }
+    .lightbox-next { right: 12px; }
+    @media (max-width: 600px) { .lightbox-nav { display: none; } }
+
+    .lightbox-heart {
+      position: absolute; bottom: 16px; right: 16px;
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(0, 0, 0, 0.5); border: none; border-radius: 20px;
+      padding: 8px 12px; cursor: pointer; z-index: 10;
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      transition: transform 0.15s;
+    }
+    .lightbox-heart:active { transform: scale(0.92); }
+    .lightbox-heart svg { width: 22px; height: 22px; fill: none; stroke: white; stroke-width: 2; }
+    .lightbox-heart.hearted svg { fill: #ff2d55; stroke: #ff2d55; }
+    .lightbox-heart-count { color: white; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    @keyframes heart-bloom {
+      0% { opacity: 1; transform: translate(-50%, -50%) scale(0); }
+      50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.2); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); }
+    }
+    .heart-bloom {
+      position: absolute; top: 50%; left: 50%;
+      font-size: 80px; color: #ff2d55; pointer-events: none;
+      animation: heart-bloom 0.6s ease-out forwards;
+    }
+    .bar-btn.active { background: var(--accent); }
+    .bar-btn.active svg { fill: white; color: white; }
+
+    /* ========================================
+       UPLOAD PANEL (TUS)
+       ======================================== */
+    .upload-panel {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--bg); border-top: 1px solid var(--border);
+      padding: 20px; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+      transform: translateY(100%);
+      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 400;
+    }
+    .upload-panel.active { transform: translateY(0); }
+    .upload-panel-content { max-width: 400px; margin: 0 auto; }
+
+    .upload-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .upload-title { font-size: 15px; font-weight: 500; }
+    .upload-controls { display: flex; gap: 8px; }
+    .upload-controls button {
+      padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg-secondary); color: var(--text);
+      font-size: 13px; font-weight: 500; cursor: pointer;
+    }
+    .upload-controls button:disabled { opacity: 0.5; cursor: default; }
+
+    .upload-progress { margin-bottom: 8px; }
+    .upload-bar { height: 6px; background: var(--bg-secondary); border-radius: 3px; overflow: hidden; }
+    .upload-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent)); border-radius: 3px; transition: width 0.15s ease-out; }
+
+    .upload-stats { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); }
+    .upload-stats .percent { font-variant-numeric: tabular-nums; }
+
+    .upload-complete { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 0; }
+    .upload-complete svg { width: 20px; height: 20px; fill: #34C759; }
+    .upload-complete span { font-size: 15px; font-weight: 500; }
+
+    .upload-hint { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 8px; }
+
+    .hidden-input { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
+
+    .spinner { width: 24px; height: 24px; border: 2px solid var(--border); border-top-color: var(--text); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+
+    .processing-placeholder {
+      width: 100%; height: 100%;
+      background: var(--bg-secondary);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .processing-badge {
+      position: absolute; bottom: 6px; left: 6px;
+      background: rgba(0, 0, 0, 0.6); color: white;
+      font-size: 10px; font-weight: 600; padding: 2px 6px;
+      border-radius: 4px; backdrop-filter: blur(4px);
+    }
+    .lightbox-processing {
+      color: var(--text-muted); font-size: 15px;
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; height: 100%;
+    }
+    .new-uploads-prompt {
+      position: fixed; top: calc(var(--bar-height) + 12px);
+      left: 50%; transform: translateX(-50%);
+      background: var(--button-bg); color: var(--button-text);
+      padding: 8px 16px; border-radius: 20px;
+      font-size: 13px; font-weight: 500;
+      cursor: pointer; z-index: 150;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      display: none;
+    }
+    .refresh-status {
+      position: fixed; top: calc(var(--bar-height) + 12px);
+      left: 50%; transform: translateX(-50%) translateY(-8px);
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--bg-secondary); color: var(--text);
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none; z-index: 140;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+      opacity: 0;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .refresh-spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--text);
+      border-radius: 50%;
+      opacity: 0.95;
+    }
+    .refresh-status[data-state="refreshing"] .refresh-spinner {
+      animation: spin 0.8s linear infinite;
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px; height: 1px;
+      margin: -1px; padding: 0; border: 0;
+      overflow: hidden; clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+    }
+    .refresh-status.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0px);
+    }
+    .verify-prompt {
+      position: fixed; top: calc(var(--bar-height) + 12px);
+      left: 50%; transform: translateX(-50%);
+      background: var(--button-bg); color: var(--button-text);
+      padding: 8px 16px; border-radius: 20px;
+      font-size: 13px; font-weight: 500;
+      cursor: pointer; z-index: 150;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      display: none;
+    }
+
+    @supports (padding-top: env(safe-area-inset-top)) {
+      .bar { padding-top: env(safe-area-inset-top); height: calc(var(--bar-height) + env(safe-area-inset-top)); }
+      .lightbox-header { padding-top: env(safe-area-inset-top); height: calc(var(--bar-height) + env(safe-area-inset-top)); }
+      .grid-container { padding-bottom: env(safe-area-inset-bottom); }
+      .new-uploads-prompt, .verify-prompt, .refresh-status {
+        top: calc(var(--bar-height) + env(safe-area-inset-top) + 12px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="bar">
+      <div class="bar-logo-container" role="button" aria-label="Toggle theme">
+        <img src="/logo.webp" alt="Kiko" class="bar-logo light">
+        <img src="/logodark.webp" alt="Kiko" class="bar-logo dark">
+      </div>
+      <div class="bar-actions">
+        <button class="bar-btn" id="sortToggle" aria-label="Sort by most loved">
+          <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        </button>
+        <button class="bar-btn" id="uploadBtn" aria-label="Upload">
+          <svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="grid-container" id="gridContainer">
+      <div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div></div>
+      <div class="grid" id="grid" aria-busy="false"></div>
+    </main>
+
+    <div class="new-uploads-prompt" id="newUploadsPrompt">New posts</div>
+    <div class="refresh-status" id="refreshStatus" role="status" aria-live="polite" aria-atomic="true" data-state="pull">
+      <span class="refresh-spinner" aria-hidden="true"></span>
+      <span class="sr-only" id="refreshStatusText">Pull to refresh</span>
+    </div>
+    <div class="verify-prompt" id="verifyPrompt">Session expired — tap to continue</div>
+
+    <div class="modal-overlay" id="modalOverlay">
+      <div class="modal">
+        <h1 class="modal-title">Kiko</h1>
+        <div class="modal-gate" id="modalGate">
+          <input id="gateInput" class="modal-gate-input" type="password"
+            inputmode="text" autocapitalize="off" spellcheck="false"
+            autocomplete="off" autocorrect="off" placeholder="Event code" />
+          <p class="modal-gate-error" id="gateError">Invalid event code</p>
+          <button class="modal-gate-go modal-btn primary" id="gateGoBtn">Go</button>
+        </div>
+        <div class="modal-verify" id="modalVerify">
+          <div class="modal-spinner"><div class="spinner"></div></div>
+          <div class="modal-turnstile" id="turnstileContainer"></div>
+          <p class="modal-error">Unable to verify.</p>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn primary" id="modalUpload">Upload</button>
+          <button class="modal-btn secondary" id="modalView">View</button>
+        </div>
+        <div class="modal-retry">
+          <button class="modal-btn primary" id="retryBtn">Try Again</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="lightbox" id="lightbox">
+      <header class="lightbox-header">
+        <button class="lightbox-close" id="lightboxClose" aria-label="Close">
+          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+        <span></span>
+        <div class="lightbox-moderation" id="lightboxModeration">
+          <span>Visibility</span>
+          <label class="visibility-toggle">
+            <input type="checkbox" id="visibilityToggle" aria-label="Toggle visibility">
+            <span id="visibilityState">Visible</span>
+          </label>
+        </div>
+      </header>
+      <div class="lightbox-body">
+        <button class="lightbox-nav lightbox-prev" id="lightboxPrev" aria-label="Previous">
+          <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+        </button>
+        <div class="lightbox-content" id="lightboxContent"></div>
+        <button class="lightbox-heart" id="lightboxHeart" aria-label="Heart">
+          <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+          <span class="lightbox-heart-count" id="lightboxHeartCount"></span>
+        </button>
+        <button class="lightbox-nav lightbox-next" id="lightboxNext" aria-label="Next">
+          <svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="upload-panel" id="uploadPanel">
+      <div class="upload-panel-content" id="uploadPanelContent"></div>
+    </div>
+
+    <input type="file" class="hidden-input" id="fileInput" multiple accept="image/*,video/*">
+  </div>
+
+  <script>
+    /* ========================================
+       TUS UPLOAD CONFIG
+       ======================================== */
+    const TUS_ENDPOINT = '/files/';
+    const CHUNK_SIZE = __UPLOAD_CHUNK_SIZE_BYTES__;
+    const MAX_FILE_SIZE = __TUSD_MAX_SIZE__;
+    const MAX_FILE_LABEL = MAX_FILE_SIZE >= 1073741824 ? (MAX_FILE_SIZE / 1073741824 | 0) + 'GB' : (MAX_FILE_SIZE / 1048576 | 0) + 'MB';
+    const PARALLEL_UPLOADS = __PARALLEL_UPLOADS__;
+    const UPLOAD_RETRY_BASE_MS = __UPLOAD_RETRY_BASE_MS__;
+    const UPLOAD_RETRY_MAX_MS = __UPLOAD_RETRY_MAX_MS__;
+    const UPLOAD_RETRY_STEPS = __UPLOAD_RETRY_STEPS__;
+
+    function buildUploadRetryDelays(baseMs, maxMs, steps) {
+      const safeSteps = Math.max(2, steps | 0);
+      const safeBase = Math.max(0, baseMs | 0);
+      const safeMax = Math.max(safeBase, maxMs | 0);
+
+      const delays = [0];
+      let nextDelay = safeBase;
+      for (let i = 1; i < safeSteps; i++) {
+        delays.push(Math.min(nextDelay, safeMax));
+        if (nextDelay >= safeMax) continue;
+        nextDelay = Math.min(safeMax, nextDelay * 2);
+      }
+      return delays;
+    }
+
+    const RETRY_DELAYS = buildUploadRetryDelays(
+      UPLOAD_RETRY_BASE_MS,
+      UPLOAD_RETRY_MAX_MS,
+      UPLOAD_RETRY_STEPS
+    );
+
+    /* ========================================
+       API ENDPOINTS
+       ======================================== */
+    const PAGE_SIZE = __DEFAULT_PAGE_SIZE__;
+    const HEART_COUNT_SYNC_BATCH_SIZE = 500;
+    let sortByHearts = false;
+
+    const API = {
+      gallery: (limit, offset) => `/api/gallery?limit=${limit}&offset=${offset}${sortByHearts ? '&sort=hearts' : ''}`,
+      heartCounts: '/api/heart-counts',
+      thumbnail: (id) => `/api/thumbs/${id}`,
+      preview: (id) => `/api/preview/${id}`,
+      moderate: (id) => `/api/assets/${id}`,
+    };
+
+    /* ========================================
+       STATE
+       ======================================== */
+    const isInternal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    let serverAssets = [];
+    let serverTotal = 0;
+    let lastSyncedHeartRevision = null;
+    const pendingTiles = new Map();
+    let displayItems = [];
+    let currentLightboxIndex = 0;
+    let fetchFailed = false;
+    const PENDING_STORAGE_KEY = `kiko:pending:${location.origin}${location.pathname}`;
+    const PENDING_MAX_ITEMS = 200;
+    const PENDING_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+
+    // TUS upload state
+    let activeUploads = [];
+    let uploadQueue = [];
+    let isPaused = false;
+    let uploadStats = { completed: 0, total: 0, failed: 0, totalBytes: 0 };
+
+    // Turnstile verification state
+    const TURNSTILE_SITEKEY = '__TURNSTILE_SITEKEY__';
+    const TURNSTILE_ACTION = '__TURNSTILE_ACTION__';
+    const TURNSTILE_CDATA = '__TURNSTILE_CDATA__';
+    const GATE_ENABLED = __GATE_ENABLED__;
+    let verifyState = 'verifying';
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    let turnstileWidgetId = null;
+    let turnstileLoadTimeout = null;
+    let gateInviteToken = null;
+    let pendingTurnstileToken = null;
+
+    // Poll manager
+    const pollManager = {
+      active: new Map(),
+      paused: false,
+      needsVerify: false,
+      inflight: 0,
+      maxInflight: __POLL_MAX_INFLIGHT__,
+    };
+    let galleryPollTimer = null;
+    const GALLERY_POLL_BASE_MS = __GALLERY_POLL_BASE_MS__;
+    const GALLERY_POLL_MAX_MS = __GALLERY_POLL_MAX_MS__;
+    let galleryPollDelay = GALLERY_POLL_BASE_MS;
+
+    // Pull/refresh/poll/verify timing constants (single source for UI behavior tuning).
+    const UI_TIMING = Object.freeze({
+      TURNSTILE_LOAD_TIMEOUT_MS: 10000,
+      TURNSTILE_VERIFY_MAX_TOTAL_WAIT_MS: 20000,
+      PULL_RESISTANCE: 0.5,
+      PULL_MAX_PX: 96,
+      PULL_THRESHOLD_PX: 64,
+      PULL_DIRECTION_SLOP_PX: 10,
+      PULL_DIRECTION_DOMINANCE_RATIO: 1.5,
+      PULL_SNAP_BACK_RESET_MS: 220,
+      POLL_INFLIGHT_BACKPRESSURE_BASE_MS: 200,
+      POLL_INFLIGHT_BACKPRESSURE_JITTER_MS: 300,
+      GALLERY_POLL_JITTER_RATIO: 0.2,
+    });
+
+    // Manual refresh + poll prompt coordination
+    let manualRefreshInFlight = null;
+    let manualRefreshSeq = 0;
+    let manualRefreshNeedsRun = false;
+    let refreshBaselineTotal = null;
+    let galleryPollSeq = 0;
+
+    // Pull gesture
+    const PULL_RESISTANCE = UI_TIMING.PULL_RESISTANCE;
+    const PULL_MAX_PX = UI_TIMING.PULL_MAX_PX;
+    const PULL_THRESHOLD_PX = UI_TIMING.PULL_THRESHOLD_PX;
+    const PULL_DIRECTION_SLOP_PX = UI_TIMING.PULL_DIRECTION_SLOP_PX;
+
+    /* ========================================
+       DOM
+       ======================================== */
+    const $ = (sel) => document.querySelector(sel);
+    const grid = $('#grid');
+    const gridContainer = $('#gridContainer');
+    const modalOverlay = $('#modalOverlay');
+    const lightbox = $('#lightbox');
+    const lightboxContent = $('#lightboxContent');
+    const fileInput = $('#fileInput');
+    const uploadPanel = $('#uploadPanel');
+    const uploadPanelContent = $('#uploadPanelContent');
+    const loadingOverlay = $('#loadingOverlay');
+    const logoContainer = $('.bar-logo-container');
+    const uploadBtn = $('#uploadBtn');
+    const modalUpload = $('#modalUpload');
+    const modalView = $('#modalView');
+    const lightboxModeration = $('#lightboxModeration');
+    const visibilityToggle = $('#visibilityToggle');
+    const visibilityState = $('#visibilityState');
+    const newUploadsPrompt = $('#newUploadsPrompt');
+    const refreshStatus = $('#refreshStatus');
+    const refreshStatusText = $('#refreshStatusText');
+    const verifyPrompt = $('#verifyPrompt');
+    const gateInput = $('#gateInput');
+    const modalGate = $('#modalGate');
+    const gateError = $('#gateError');
+    const gateGoBtn = $('#gateGoBtn');
+    const sortToggleBtn = $('#sortToggle');
+    const lightboxHeart = $('#lightboxHeart');
+    const lightboxHeartCount = $('#lightboxHeartCount');
+
+    const emptyStateTemplate = (msg) => `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+        <p>${msg}</p>
+      </div>
+    `;
+
+    if (isInternal) {
+      uploadBtn.style.display = 'none';
+      modalUpload.style.display = 'none';
+      sortToggleBtn.style.display = 'none';
+      lightboxHeart.style.display = 'none';
+      fileInput.disabled = true;
+      lightboxModeration.classList.add('active');
+    }
+
+    /* ========================================
+       THEME
+       ======================================== */
+    function getSystemTheme() { return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('theme', theme);
+    }
+    function getCurrentTheme() { return document.documentElement.getAttribute('data-theme') || getSystemTheme(); }
+    function toggleTheme() { setTheme(getCurrentTheme() === 'dark' ? 'light' : 'dark'); }
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) setTheme(savedTheme);
+    logoContainer.addEventListener('click', toggleTheme);
+
+    /* ========================================
+       REFRESH STATUS + PULL VISUAL
+       ======================================== */
+    const REFRESH_STATUS_TEXT = {
+      pull: 'Pull to refresh',
+      ready: 'Release to refresh',
+      refreshing: 'Refreshing',
+    };
+    let refreshStatusState = 'pull';
+    let refreshStatusVisible = false;
+
+    let pullOffsetPx = 0;
+    let pullVisualState = 'idle';
+    let pullTrackingId = null;
+    let pullTrackingPointer = false;
+    let pullStartX = 0;
+    let pullStartY = 0;
+    let pullDirectionLocked = false;
+    let fallbackTouchId = null;
+    let fallbackBlockTouchMove = null;
+    let pullSnapBackTimer = null;
+    const activePointerTouches = new Set();
+    // Touch browsers can claim vertical pan gestures before the custom pull
+    // gesture locks, so use the touch fallback path whenever touch input exists.
+    const usePointerPullGesturePath = shouldUsePointerPullGesturePath();
+
+    function shouldUsePointerPullGesturePath() {
+      const maxTouchPoints = Number(navigator.maxTouchPoints) || 0;
+      const hasTouchInput = maxTouchPoints > 0 || 'ontouchstart' in window;
+      return Boolean(window.PointerEvent) && !hasTouchInput;
+    }
+
+    function setGridBusy(isBusy) {
+      grid.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+    }
+
+    function setRefreshStatus(state, options = {}) {
+      const nextState = REFRESH_STATUS_TEXT[state] ? state : 'pull';
+      const visible = options.visible ?? refreshStatusVisible;
+
+      if (refreshStatusState !== nextState) {
+        refreshStatusState = nextState;
+        refreshStatusText.textContent = REFRESH_STATUS_TEXT[nextState];
+      }
+      refreshStatus.setAttribute('data-state', nextState);
+      if (refreshStatusVisible !== visible) {
+        refreshStatusVisible = visible;
+        refreshStatus.classList.toggle('visible', visible);
+      }
+    }
+
+    function setPullVisualState(state) {
+      if (pullVisualState === state) return;
+      pullVisualState = state;
+      if (state === 'ready') {
+        setRefreshStatus('ready', { visible: true });
+      } else if (state === 'refreshing') {
+        setRefreshStatus('refreshing', { visible: true });
+      } else {
+        setRefreshStatus('pull', { visible: true });
+      }
+    }
+
+    function setGridPullOffset(px) {
+      if (pullOffsetPx === px) return;
+      pullOffsetPx = px;
+      grid.style.transform = `translateY(${px}px)`;
+    }
+
+    function applyPullVisual(visualPullPx) {
+      if (grid.classList.contains('pull-snap')) {
+        grid.classList.remove('pull-snap');
+      }
+      setGridPullOffset(visualPullPx);
+      setPullVisualState(visualPullPx >= PULL_THRESHOLD_PX ? 'ready' : 'idle');
+    }
+
+    function snapGridBack() {
+      if (pullSnapBackTimer) {
+        clearTimeout(pullSnapBackTimer);
+      }
+      grid.classList.add('pull-snap');
+      setGridPullOffset(0);
+      pullSnapBackTimer = setTimeout(() => {
+        pullSnapBackTimer = null;
+        grid.classList.remove('pull-snap');
+      }, UI_TIMING.PULL_SNAP_BACK_RESET_MS);
+    }
+
+    function canStartPullGesture(target) {
+      return gridContainer.contains(target)
+        && gridContainer.scrollTop <= 0
+        && !lightbox.classList.contains('active')
+        && !modalOverlay.classList.contains('active');
+    }
+
+    function setTouchFallbackMoveBlocker(enabled) {
+      if (enabled) {
+        if (fallbackBlockTouchMove) return;
+        fallbackBlockTouchMove = (event) => {
+          if (pullDirectionLocked) event.preventDefault();
+        };
+        gridContainer.addEventListener('touchmove', fallbackBlockTouchMove, { passive: false });
+        return;
+      }
+
+      if (!fallbackBlockTouchMove) return;
+      gridContainer.removeEventListener('touchmove', fallbackBlockTouchMove, { passive: false });
+      fallbackBlockTouchMove = null;
+    }
+
+    function resetPullTrackingState() {
+      if (pullTrackingPointer && pullTrackingId !== null) {
+        try {
+          if (gridContainer.hasPointerCapture(pullTrackingId)) {
+            gridContainer.releasePointerCapture(pullTrackingId);
+          }
+        } catch {}
+      }
+      setTouchFallbackMoveBlocker(false);
+      pullTrackingId = null;
+      pullTrackingPointer = false;
+      fallbackTouchId = null;
+      pullStartX = 0;
+      pullStartY = 0;
+      pullDirectionLocked = false;
+    }
+
+    function resetPullGesture() {
+      resetPullTrackingState();
+      activePointerTouches.clear();
+      pullVisualState = 'idle';
+      if (pullOffsetPx > 0) {
+        snapGridBack();
+      }
+      if (
+        manualRefreshInFlight === null &&
+        !manualRefreshNeedsRun &&
+        (refreshStatusState === 'pull' || refreshStatusState === 'ready' || refreshStatusState === 'refreshing')
+      ) {
+        setRefreshStatus('pull', { visible: false });
+      }
+    }
+
+    /* ========================================
+       TURNSTILE VERIFICATION
+       ======================================== */
+    function setVerifyState(state) {
+      verifyState = state;
+      const modal = document.querySelector('.modal');
+      modal.setAttribute('data-state', state);
+    }
+
+    function initTurnstile() {
+      if (typeof turnstile === 'undefined') {
+        if (!turnstileLoadTimeout) {
+          turnstileLoadTimeout = setTimeout(() => {
+            console.error('Turnstile script failed to load');
+            setVerifyState('failed');
+          }, UI_TIMING.TURNSTILE_LOAD_TIMEOUT_MS);
+        }
+        window.addEventListener('load', initTurnstile, { once: true });
+        return;
+      }
+
+      if (turnstileLoadTimeout) {
+        clearTimeout(turnstileLoadTimeout);
+        turnstileLoadTimeout = null;
+      }
+
+      turnstile.ready(() => {
+        turnstileWidgetId = turnstile.render('#turnstileContainer', {
+          sitekey: TURNSTILE_SITEKEY,
+          action: TURNSTILE_ACTION,
+          cData: TURNSTILE_CDATA,
+          size: 'compact',
+          appearance: 'interaction-only',
+          execution: 'render',
+          callback: onTurnstileSuccess,
+          'error-callback': onTurnstileError,
+          'expired-callback': onTurnstileExpired,
+          'before-interactive-callback': () => setVerifyState('interaction'),
+        });
+      });
+    }
+
+    function resetTurnstile() {
+      if (turnstileWidgetId !== null) {
+        turnstile.reset(turnstileWidgetId);
+      }
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function parseRetryAfterSeconds(res) {
+      const raw = res.headers.get('Retry-After');
+      const n = raw ? parseInt(raw, 10) : 1;
+      if (!Number.isFinite(n) || n < 1) return 1;
+      return Math.min(n, 10);
+    }
+
+    function consumeInviteTokenFromHash() {
+      if (!window.location.hash || window.location.hash.length <= 1) return;
+
+      const params = new URLSearchParams(window.location.hash.slice(1));
+      const token = params.get('g');
+      if (!token) return;
+
+      gateInviteToken = token;
+      const cleanURL = `${window.location.pathname}${window.location.search}`;
+      history.replaceState(null, '', cleanURL);
+    }
+
+    function buildVerifyPayload(token) {
+      const payload = { token };
+      const gateSecret = gateInput?.value?.trim() || gateInviteToken;
+      if (gateSecret) payload.gateSecret = gateSecret;
+      return payload;
+    }
+
+    async function verifyTurnstileTokenWithBackoff(token) {
+      const MAX_TOTAL_WAIT_MS = UI_TIMING.TURNSTILE_VERIFY_MAX_TOTAL_WAIT_MS;
+      let waitedMs = 0;
+      const payload = buildVerifyPayload(token);
+
+      while (true) {
+        const res = await fetch('/api/turnstile/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          credentials: 'same-origin',
+        });
+
+        if (res.status === 503) {
+          const retryAfterSeconds = parseRetryAfterSeconds(res);
+          const waitMs = retryAfterSeconds * 1000;
+          waitedMs += waitMs;
+          if (waitedMs > MAX_TOTAL_WAIT_MS) throw new Error('Verify overloaded');
+          await sleep(waitMs);
+          continue;
+        }
+
+        if (!res.ok) { const e = new Error('Verify failed'); e.status = res.status; throw e; }
+        return;
+      }
+    }
+
+    consumeInviteTokenFromHash();
+    if (GATE_ENABLED && !gateInviteToken) {
+      modalGate.classList.add('active');
+    }
+    if (gateInput) {
+      gateInput.addEventListener('input', () => {
+        gateInput.classList.remove('error');
+        gateError?.classList.remove('visible');
+      });
+      gateInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); submitGate(); }
+      });
+    }
+    gateGoBtn?.addEventListener('click', submitGate);
+
+    function executeVerify(token) {
+      setVerifyState('verifying');
+      verifyTurnstileTokenWithBackoff(token)
+        .then(() => {
+          retryCount = 0;
+          setVerifyState('verified');
+
+          if (window._pendingReauth) {
+            hideModal();
+            window._pendingReauth();
+            window._pendingReauth = null;
+          }
+
+          if (window._pendingBootstrap) {
+            window._pendingBootstrap();
+            window._pendingBootstrap = null;
+          }
+
+          if (window._afterVerify) {
+            hideModal();
+            window._afterVerify();
+            window._afterVerify = null;
+          }
+
+          if (pollManager.needsVerify) {
+            resumeAllPolls();
+          }
+        })
+        .catch(handleVerifyError);
+    }
+
+    function onTurnstileSuccess(token) {
+      if (GATE_ENABLED && !gateInviteToken) {
+        pendingTurnstileToken = token;
+        setVerifyState('ready');
+        gateInput?.focus();
+        return;
+      }
+      gateInput?.classList.remove('error');
+      gateError?.classList.remove('visible');
+      executeVerify(token);
+    }
+
+    function submitGate() {
+      if (!pendingTurnstileToken) return;
+      executeVerify(pendingTurnstileToken);
+      pendingTurnstileToken = null;
+    }
+
+    function onTurnstileError(errorCode) {
+      console.error('Turnstile error:', errorCode);
+      retryCount++;
+      if (retryCount < MAX_RETRIES) {
+        resetTurnstile();
+        setVerifyState('verifying');
+      } else {
+        setVerifyState('failed');
+      }
+    }
+
+    function onTurnstileExpired() {
+      resetTurnstile();
+      setVerifyState('verifying');
+    }
+
+    function handleVerifyError(err) {
+      console.error('Verify error:', err);
+      if (GATE_ENABLED && err.status === 403) {
+        modalGate.classList.add('active');
+        gateInput?.classList.add('error');
+        gateError?.classList.add('visible');
+        resetTurnstile();
+        setVerifyState('verifying');
+        return;
+      }
+      retryCount++;
+      if (retryCount < MAX_RETRIES) {
+        resetTurnstile();
+        setVerifyState('verifying');
+      } else {
+        setVerifyState('failed');
+      }
+    }
+
+    function handleRetry() {
+      retryCount = 0;
+      pendingTurnstileToken = null;
+      setVerifyState('verifying');
+      if (typeof turnstile === 'undefined' || turnstileWidgetId === null) {
+        initTurnstile();
+      } else {
+        resetTurnstile();
+      }
+    }
+
+    function beginVerification(continuationKey, continuation) {
+      showModal();
+      clearGateInput();
+      pendingTurnstileToken = null;
+      setVerifyState('verifying');
+      window[continuationKey] = continuation;
+      if (turnstileWidgetId === null) {
+        initTurnstile();
+      } else {
+        resetTurnstile();
+      }
+    }
+
+    async function fetchWithReauth(url, options = {}, verificationFlow = rerunVerification) {
+      const res = await fetch(url, { ...options, credentials: 'same-origin' });
+      if (res.status === 401 || res.status === 403) {
+        await verificationFlow();
+        return fetch(url, { ...options, credentials: 'same-origin' });
+      }
+      return res;
+    }
+
+    function rerunVerification() {
+      return new Promise((resolve) => {
+        beginVerification('_pendingReauth', resolve);
+      });
+    }
+
+    function bootstrapVerification() {
+      return new Promise((resolve) => {
+        beginVerification('_pendingBootstrap', resolve);
+      });
+    }
+
+    /* ========================================
+       FETCH GALLERY
+       ======================================== */
+    let isLoading = false;
+
+    function runQueuedManualRefreshIfIdle() {
+      if (!manualRefreshNeedsRun) return;
+      if (manualRefreshInFlight !== null) return;
+      if (isLoading) return;
+      manualRefreshNeedsRun = false;
+      refreshGalleryNow('queued');
+    }
+
+    async function fetchAssets(append = false, verificationFlow = rerunVerification) {
+      if (isLoading) return false;
+      isLoading = true;
+      try {
+        const offset = append ? serverAssets.length : 0;
+        const res = isInternal
+          ? await fetch(API.gallery(PAGE_SIZE, offset))
+          : await fetchWithReauth(API.gallery(PAGE_SIZE, offset), {}, verificationFlow);
+        if (!res.ok) throw new Error('Failed to fetch');
+        const data = await res.json();
+        serverTotal = data.total || 0;
+        if (!isInternal && typeof data.heartRevision === 'number') {
+          lastSyncedHeartRevision = data.heartRevision;
+        }
+        if (append) {
+          serverAssets = serverAssets.concat(data.assets || []);
+        } else {
+          serverAssets = data.assets || [];
+          prunePublishedPendingTiles();
+        }
+        renderGrid();
+        fetchFailed = false;
+        savePendingToStorage();
+        if (!append && refreshBaselineTotal === null) {
+          refreshBaselineTotal = serverTotal;
+        }
+        return true;
+      } catch (err) {
+        console.error('Error fetching:', err);
+        if (!append) { fetchFailed = true; grid.innerHTML = emptyStateTemplate('Unable to load media'); }
+        return false;
+      } finally {
+        isLoading = false;
+        loadingOverlay.style.display = 'none';
+        runQueuedManualRefreshIfIdle();
+      }
+    }
+
+    function refreshGalleryNow(source) {
+      if (manualRefreshInFlight) {
+        if (source === 'prompt' || source === 'control') {
+          manualRefreshNeedsRun = true;
+        }
+        return manualRefreshInFlight;
+      }
+
+      manualRefreshSeq += 1;
+      const seq = manualRefreshSeq;
+      let thisPromise = null;
+
+      thisPromise = (async () => {
+        newUploadsPrompt.style.display = 'none';
+        setRefreshStatus('refreshing', { visible: true });
+        setGridBusy(true);
+
+        if (isLoading) {
+          manualRefreshNeedsRun = true;
+          return false;
+        }
+
+        const refreshed = await fetchAssets(false);
+        if (seq !== manualRefreshSeq) return refreshed;
+
+        if (refreshed) {
+          gridContainer.scrollTop = 0;
+          refreshBaselineTotal = serverTotal;
+          setRefreshStatus('pull', { visible: false });
+          return true;
+        }
+
+        newUploadsPrompt.style.display = 'none';
+        setRefreshStatus('pull', { visible: false });
+        return false;
+      })().finally(() => {
+        if (manualRefreshInFlight === thisPromise) {
+          manualRefreshInFlight = null;
+        }
+
+        if (manualRefreshNeedsRun) {
+          runQueuedManualRefreshIfIdle();
+          return;
+        }
+
+        if (seq === manualRefreshSeq) {
+          setGridBusy(false);
+        }
+        if (!isInternal) {
+          startGalleryPoll();
+        }
+      });
+
+      manualRefreshInFlight = thisPromise;
+      return thisPromise;
+    }
+
+    function getDisplayItems() {
+      const pendingArray = [...pendingTiles.values()]
+        .sort((a, b) => b.createdAtMs - a.createdAtMs)
+        .map(tile => ({ ...tile, isPending: true }));
+      const pendingIds = new Set(pendingTiles.keys());
+      const filtered = serverAssets.filter(a => !pendingIds.has(a.id));
+      return [...pendingArray, ...filtered];
+    }
+
+    function gridItemTemplate(item) {
+      if (item.isPending) return pendingTileTemplate(item);
+      const isHidden = isInternal && item.status === 'moderated';
+      const hiddenBadge = isHidden ? '<span class="hidden-badge">HIDDEN</span>' : '';
+      const statusAttr = isInternal && item.status ? ` data-status="${item.status}"` : '';
+      const itemClass = isHidden ? 'grid-item moderated' : 'grid-item';
+      const heartBadge = item.heartCount > 0 ? `<span class="heart-badge">\u2665 ${item.heartCount}</span>` : '';
+      return `
+        <div class="${itemClass}" data-id="${item.id}" data-type="${item.type}"${statusAttr}>
+          <img src="${API.thumbnail(item.id)}" alt="" loading="lazy" decoding="async">
+          ${item.type === 'video' ? '<span class="video-badge">VIDEO</span>' : ''}
+          ${heartBadge}
+          ${hiddenBadge}
+        </div>
+      `;
+    }
+
+    function pendingTileTemplate(item) {
+      let content, badge = '';
+      if (item.type === 'video') {
+        if (item.previewReady) {
+          content = `<img src="${API.thumbnail(item.id)}" alt="" loading="lazy" decoding="async">`;
+        } else {
+          content = '<div class="processing-placeholder"><div class="spinner"></div></div>';
+          badge = '<span class="processing-badge">Processing</span>';
+        }
+      } else {
+        if (item.thumbReady) {
+          content = `<img src="${API.thumbnail(item.id)}" alt="" loading="lazy" decoding="async">`;
+        } else if (item.blobUrl) {
+          content = `<img src="${item.blobUrl}" alt="">`;
+        } else {
+          content = '<div class="processing-placeholder"><div class="spinner"></div></div>';
+        }
+        badge = item.previewReady ? '' : '<span class="processing-badge">Processing</span>';
+      }
+      return `
+        <div class="grid-item" data-id="${item.id}" data-type="${item.type}">
+          ${content}
+          ${badge}
+        </div>
+      `;
+    }
+
+    function startPullTracking(id, x, y, isPointer, target) {
+      if (!canStartPullGesture(target)) return false;
+      newUploadsPrompt.style.display = 'none';
+      pullTrackingId = id;
+      pullTrackingPointer = isPointer;
+      fallbackTouchId = isPointer ? null : id;
+      if (!isPointer) {
+        setTouchFallbackMoveBlocker(true);
+      }
+      pullStartX = x;
+      pullStartY = y;
+      pullDirectionLocked = false;
+      pullVisualState = 'idle';
+      return true;
+    }
+
+    function handlePullMove(x, y, pointerId = null) {
+      if (pullTrackingId === null) return;
+
+      const deltaX = x - pullStartX;
+      const deltaY = y - pullStartY;
+
+      if (!pullDirectionLocked) {
+        if (Math.abs(deltaX) < PULL_DIRECTION_SLOP_PX && Math.abs(deltaY) < PULL_DIRECTION_SLOP_PX) return;
+        if (deltaY <= 0) { resetPullGesture(); return; }
+        if (Math.abs(deltaY) <= Math.abs(deltaX)) { resetPullGesture(); return; }
+        if (Math.abs(deltaY) <= UI_TIMING.PULL_DIRECTION_DOMINANCE_RATIO * Math.abs(deltaX)) { resetPullGesture(); return; }
+
+        pullDirectionLocked = true;
+        if (pullTrackingPointer && pointerId !== null) {
+          try { gridContainer.setPointerCapture(pointerId); } catch {}
+        }
+        setRefreshStatus('pull', { visible: true });
+      }
+
+      const rawPullPx = Math.max(0, deltaY);
+      const visualPullPx = Math.min(PULL_MAX_PX, rawPullPx * PULL_RESISTANCE);
+      applyPullVisual(visualPullPx);
+    }
+
+    function endPullTracking() {
+      const shouldRefresh = pullDirectionLocked && pullOffsetPx >= PULL_THRESHOLD_PX;
+      resetPullTrackingState();
+      pullVisualState = 'idle';
+
+      if (shouldRefresh) {
+        setRefreshStatus('refreshing', { visible: true });
+        refreshGalleryNow('pull').finally(() => {
+          snapGridBack();
+          if (manualRefreshInFlight === null && !manualRefreshNeedsRun && refreshStatusState === 'pull') {
+            setRefreshStatus('pull', { visible: false });
+          }
+        });
+        return;
+      }
+
+      if (pullOffsetPx > 0) {
+        snapGridBack();
+      }
+      if (manualRefreshInFlight === null && !manualRefreshNeedsRun) {
+        setRefreshStatus('pull', { visible: false });
+      }
+    }
+
+    function touchByIdentifier(touchList, identifier) {
+      for (let i = 0; i < touchList.length; i++) {
+        if (touchList[i].identifier === identifier) return touchList[i];
+      }
+      return null;
+    }
+
+    function onGridPointerDown(event) {
+      if (event.pointerType !== 'touch') return;
+      activePointerTouches.add(event.pointerId);
+      if (activePointerTouches.size > 1) {
+        resetPullGesture();
+        return;
+      }
+      startPullTracking(event.pointerId, event.clientX, event.clientY, true, event.target);
+    }
+
+    function onGridPointerMove(event) {
+      if (event.pointerType !== 'touch') return;
+      if (event.pointerId !== pullTrackingId) return;
+      handlePullMove(event.clientX, event.clientY, event.pointerId);
+    }
+
+    function onGridPointerUp(event) {
+      if (event.pointerType !== 'touch') return;
+      activePointerTouches.delete(event.pointerId);
+      if (event.pointerId !== pullTrackingId) return;
+      endPullTracking();
+    }
+
+    function onGridPointerCancel(event) {
+      if (event.pointerType !== 'touch') return;
+      activePointerTouches.delete(event.pointerId);
+      if (event.pointerId !== pullTrackingId) return;
+      resetPullGesture();
+    }
+
+    function onGridLostPointerCapture(event) {
+      if (event.pointerId !== pullTrackingId) return;
+      resetPullGesture();
+    }
+
+    function onGridTouchStart(event) {
+      if (event.touches.length > 1) {
+        resetPullGesture();
+        return;
+      }
+      if (pullTrackingId !== null) return;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      startPullTracking(touch.identifier, touch.clientX, touch.clientY, false, event.target);
+    }
+
+    function onGridTouchMove(event) {
+      if (pullTrackingId === null || fallbackTouchId === null) return;
+      const touch = touchByIdentifier(event.touches, fallbackTouchId);
+      if (!touch) return;
+      const deltaX = touch.clientX - pullStartX;
+      const deltaY = touch.clientY - pullStartY;
+      const slopExceeded = Math.abs(deltaX) >= PULL_DIRECTION_SLOP_PX || Math.abs(deltaY) >= PULL_DIRECTION_SLOP_PX;
+      const verticalPullCandidate = deltaY > 0
+        && Math.abs(deltaY) > Math.abs(deltaX)
+        && Math.abs(deltaY) > UI_TIMING.PULL_DIRECTION_DOMINANCE_RATIO * Math.abs(deltaX);
+      if (event.cancelable && (pullDirectionLocked || (slopExceeded && verticalPullCandidate))) {
+        event.preventDefault();
+      }
+      handlePullMove(touch.clientX, touch.clientY);
+    }
+
+    function onGridTouchEnd(event) {
+      if (pullTrackingId === null || fallbackTouchId === null) return;
+      const ended = touchByIdentifier(event.changedTouches, fallbackTouchId);
+      if (!ended) return;
+      endPullTracking();
+    }
+
+    function onGridTouchCancel() {
+      if (pullTrackingId === null) return;
+      resetPullGesture();
+    }
+
+    if (usePointerPullGesturePath) {
+      gridContainer.addEventListener('pointerdown', onGridPointerDown, { passive: true });
+      gridContainer.addEventListener('pointermove', onGridPointerMove, { passive: true });
+      gridContainer.addEventListener('pointerup', onGridPointerUp, { passive: true });
+      gridContainer.addEventListener('pointercancel', onGridPointerCancel, { passive: true });
+      gridContainer.addEventListener('lostpointercapture', onGridLostPointerCapture, { passive: true });
+    } else {
+      gridContainer.addEventListener('touchstart', onGridTouchStart, { passive: true });
+      gridContainer.addEventListener('touchmove', onGridTouchMove, { passive: false });
+      gridContainer.addEventListener('touchend', onGridTouchEnd, { passive: true });
+      gridContainer.addEventListener('touchcancel', onGridTouchCancel, { passive: true });
+    }
+
+    // Infinite scroll
+    gridContainer.addEventListener('scroll', () => {
+      if (isLoading || serverAssets.length >= serverTotal) return;
+      if (gridContainer.scrollTop + gridContainer.clientHeight >= gridContainer.scrollHeight - 500) {
+        fetchAssets(true);
+      }
+    });
+
+    /* ========================================
+       RENDER GRID
+       ======================================== */
+    function renderGrid() {
+      if (fetchFailed) return;
+      displayItems = getDisplayItems();
+      if (displayItems.length === 0) { grid.innerHTML = emptyStateTemplate('No media yet'); return; }
+      grid.innerHTML = displayItems.map(item => gridItemTemplate(item)).join('');
+    }
+
+    function applyModerationState(id) {
+      if (!isInternal) return;
+      const asset = serverAssets.find(a => a.id === id) || displayItems.find(d => d.id === id);
+      const el = grid.querySelector(`.grid-item[data-id="${id}"]`);
+      if (!asset || !el) return;
+
+      const isHidden = asset.status === 'moderated';
+      el.classList.toggle('moderated', isHidden);
+      if (asset.status) el.setAttribute('data-status', asset.status); else el.removeAttribute('data-status');
+
+      const existingBadge = el.querySelector('.hidden-badge');
+      if (isHidden && !existingBadge) {
+        el.insertAdjacentHTML('beforeend', '<span class="hidden-badge">HIDDEN</span>');
+      } else if (!isHidden && existingBadge) {
+        existingBadge.remove();
+      }
+    }
+
+    function setGridGrayed(grayed) { grid.classList.toggle('is-grayed', grayed); }
+
+    function clearGateInput() {
+      if (!gateInput) return;
+      gateInput.value = '';
+      gateInput.classList.remove('error');
+      gateError?.classList.remove('visible');
+    }
+
+    grid.addEventListener('click', (e) => {
+      const el = e.target.closest('.grid-item');
+      if (!el) return;
+      const id = el.dataset.id;
+      const idx = displayItems.findIndex(d => d.id === id);
+      if (idx >= 0) openLightbox(idx);
+    });
+
+    /* ========================================
+       MODAL
+       ======================================== */
+    function showModal() { setGridGrayed(true); modalOverlay.classList.add('active'); }
+    function hideModal() {
+      modalOverlay.classList.remove('active');
+      setGridGrayed(false);
+      clearGateInput();
+    }
+    modalUpload.addEventListener('click', () => {
+      if (isInternal) return;
+      triggerUpload();
+    });
+    modalView.addEventListener('click', hideModal);
+    document.getElementById('retryBtn').addEventListener('click', handleRetry);
+
+    /* ========================================
+       LIGHTBOX
+       ======================================== */
+    const lightboxPrev = $('#lightboxPrev');
+    const lightboxNext = $('#lightboxNext');
+
+    function setVisibilityUI(isHidden) {
+      if (!isInternal) return;
+      visibilityToggle.checked = isHidden;
+      visibilityState.textContent = isHidden ? 'Hidden' : 'Visible';
+    }
+
+    function openLightbox(index) {
+      currentLightboxIndex = index;
+      showLightboxAsset(index);
+      lightbox.classList.add('active');
+      document.addEventListener('keydown', handleLightboxKeyboard);
+    }
+
+    function showLightboxAsset(index) {
+      const item = displayItems[index];
+      if (!item) return;
+      const tile = item.isPending ? pendingTiles.get(item.id) : null;
+
+      if (tile) {
+        if (item.type === 'video') {
+          if (tile.previewReady) {
+            lightboxContent.innerHTML = `<video src="${API.preview(item.id)}" poster="${API.thumbnail(item.id)}" controls autoplay playsinline preload="metadata"></video>`;
+          } else {
+            lightboxContent.innerHTML = '<div class="lightbox-processing">Processing video…</div>';
+          }
+        } else {
+          if (tile.previewReady) {
+            lightboxContent.innerHTML = `<img src="${API.preview(item.id)}" alt="">`;
+          } else if (tile.thumbReady) {
+            lightboxContent.innerHTML = `<img src="${API.thumbnail(item.id)}" alt=""><div class="lightbox-processing" style="position:absolute;bottom:16px">Processing…</div>`;
+          } else if (tile.blobUrl) {
+            lightboxContent.innerHTML = `<img src="${tile.blobUrl}" alt=""><div class="lightbox-processing" style="position:absolute;bottom:16px">Processing…</div>`;
+          } else {
+            lightboxContent.innerHTML = '<div class="lightbox-processing">Processing…</div>';
+          }
+        }
+        if (isInternal) visibilityToggle.disabled = true;
+      } else {
+        if (item.type === 'video') {
+          lightboxContent.innerHTML = `<video src="${API.preview(item.id)}" poster="${API.thumbnail(item.id)}" controls autoplay playsinline preload="metadata"></video>`;
+        } else {
+          lightboxContent.innerHTML = `<img src="${API.preview(item.id)}" alt="">`;
+        }
+        if (isInternal) {
+          setVisibilityUI(item.status === 'moderated');
+          visibilityToggle.disabled = false;
+        }
+      }
+
+      lightboxPrev.disabled = index === 0;
+      lightboxNext.disabled = index >= displayItems.length - 1 && serverAssets.length >= serverTotal;
+
+      if (!isInternal && !item.isPending) {
+        lightboxHeart.style.display = '';
+        updateLightboxHeartCount(item.heartCount || 0);
+      } else {
+        lightboxHeart.style.display = 'none';
+      }
+    }
+
+    function closeLightbox() {
+      lightbox.classList.remove('active');
+      document.removeEventListener('keydown', handleLightboxKeyboard);
+      const video = lightboxContent.querySelector('video');
+      if (video) video.pause();
+      lightboxContent.innerHTML = '';
+    }
+
+    async function navigateLightbox(dir) {
+      const newIdx = currentLightboxIndex + dir;
+      if (newIdx < 0) return;
+      if (newIdx >= displayItems.length) {
+        if (serverAssets.length < serverTotal) {
+          await fetchAssets(true);
+        }
+        if (newIdx >= displayItems.length) return;
+      }
+      const video = lightboxContent.querySelector('video');
+      if (video) video.pause();
+      currentLightboxIndex = newIdx;
+      showLightboxAsset(newIdx);
+    }
+
+    function handleLightboxKeyboard(e) {
+      if (e.key === 'ArrowLeft') navigateLightbox(-1);
+      else if (e.key === 'ArrowRight') navigateLightbox(1);
+      else if (e.key === 'Escape') closeLightbox();
+    }
+
+    $('#lightboxClose').addEventListener('click', closeLightbox);
+    lightboxPrev.addEventListener('click', () => navigateLightbox(-1));
+    lightboxNext.addEventListener('click', () => navigateLightbox(1));
+    lightbox.addEventListener('click', (e) => {
+      if (e.target === lightbox || e.target.classList.contains('lightbox-content')) closeLightbox();
+    });
+
+    async function heartAsset(id) {
+      const res = await fetchWithReauth(`/api/assets/${id}/heart`, { method: 'POST' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const asset = serverAssets.find(a => a.id === id);
+      if (asset) asset.heartCount = data.heartCount;
+      updateHeartBadge(id, data.heartCount);
+      updateLightboxHeartCount(data.heartCount);
+      showHeartBloom();
+    }
+
+    function applyHeartCountsPatch(heartCounts) {
+      if (!heartCounts || typeof heartCounts !== 'object') return;
+
+      const activeLightbox = lightbox.classList.contains('active');
+      const currentItem = activeLightbox ? displayItems[currentLightboxIndex] : null;
+      let currentLightboxCount = null;
+
+      for (const asset of serverAssets) {
+        if (!Object.prototype.hasOwnProperty.call(heartCounts, asset.id)) continue;
+        const count = heartCounts[asset.id];
+        if (!Number.isInteger(count) || count < 0) continue;
+        asset.heartCount = count;
+        updateHeartBadge(asset.id, count);
+        if (currentItem && !currentItem.isPending && currentItem.id === asset.id) {
+          currentLightboxCount = count;
+        }
+      }
+
+      if (currentLightboxCount !== null) {
+        updateLightboxHeartCount(currentLightboxCount);
+      }
+    }
+
+    async function syncHeartCounts(isStaleSync = () => false) {
+      const loadedIds = [];
+      const seenIds = new Set();
+      for (const asset of serverAssets) {
+        if (!asset || !asset.id || seenIds.has(asset.id)) continue;
+        seenIds.add(asset.id);
+        loadedIds.push(asset.id);
+      }
+      if (loadedIds.length === 0) return true;
+
+      for (let start = 0; start < loadedIds.length; start += HEART_COUNT_SYNC_BATCH_SIZE) {
+        if (isStaleSync()) return false;
+        const ids = loadedIds.slice(start, start + HEART_COUNT_SYNC_BATCH_SIZE);
+        const res = await fetchWithReauth(API.heartCounts, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+        if (isStaleSync()) return false;
+        if (!res.ok) throw new Error('Failed to sync heart counts');
+        const data = await res.json();
+        if (isStaleSync()) return false;
+        applyHeartCountsPatch(data.heartCounts);
+      }
+
+      return true;
+    }
+
+    function updateHeartBadge(id, count) {
+      const el = grid.querySelector(`.grid-item[data-id="${id}"]`);
+      if (!el) return;
+      const existing = el.querySelector('.heart-badge');
+      if (count > 0) {
+        if (existing) { existing.textContent = `\u2665 ${count}`; }
+        else { el.insertAdjacentHTML('beforeend', `<span class="heart-badge">\u2665 ${count}</span>`); }
+      } else if (existing) { existing.remove(); }
+    }
+
+    function updateLightboxHeartCount(count) {
+      lightboxHeartCount.textContent = count > 0 ? count : '';
+      lightboxHeart.classList.toggle('hearted', count > 0);
+    }
+
+    function showHeartBloom() {
+      const bloom = document.createElement('div');
+      bloom.className = 'heart-bloom';
+      bloom.textContent = '\u2665';
+      lightboxContent.appendChild(bloom);
+      bloom.addEventListener('animationend', () => bloom.remove());
+    }
+
+    lightboxHeart.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const item = displayItems[currentLightboxIndex];
+      if (item && !item.isPending) heartAsset(item.id);
+    });
+
+    let lastTapTime = 0;
+    lightboxContent.addEventListener('click', (e) => {
+      if (e.target.tagName === 'VIDEO') return;
+      const now = Date.now();
+      if (now - lastTapTime < 300) {
+        const item = displayItems[currentLightboxIndex];
+        if (item && !item.isPending) heartAsset(item.id);
+      }
+      lastTapTime = now;
+    });
+
+    sortToggleBtn.addEventListener('click', () => {
+      sortByHearts = !sortByHearts;
+      sortToggleBtn.classList.toggle('active', sortByHearts);
+      serverAssets = [];
+      serverTotal = 0;
+      fetchAssets(false);
+    });
+
+    if (isInternal) {
+      visibilityToggle.addEventListener('change', async () => {
+        const item = displayItems[currentLightboxIndex];
+        if (!item) return;
+        const serverAsset = serverAssets.find(a => a.id === item.id);
+        if (!serverAsset) return;
+        const previousStatus = serverAsset.status || 'complete';
+        const desiredStatus = visibilityToggle.checked ? 'moderated' : 'complete';
+        visibilityState.textContent = visibilityToggle.checked ? 'Hidden' : 'Visible';
+        visibilityToggle.disabled = true;
+        try {
+          const res = await fetch(API.moderate(serverAsset.id), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: desiredStatus }),
+          });
+          if (res.status !== 204) throw new Error('Moderation failed');
+          serverAsset.status = desiredStatus;
+          applyModerationState(serverAsset.id);
+        } catch (err) {
+          serverAsset.status = previousStatus;
+          setVisibilityUI(previousStatus === 'moderated');
+          alert('Failed to update visibility');
+        } finally {
+          visibilityToggle.disabled = false;
+        }
+      });
+    }
+
+    // Swipe
+    let touchStartX = 0;
+    let lightboxSwipeTracking = false;
+    lightboxContent.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1 || e.changedTouches.length !== 1) {
+        lightboxSwipeTracking = false;
+        return;
+      }
+      lightboxSwipeTracking = true;
+      touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+    lightboxContent.addEventListener('touchend', (e) => {
+      if (!lightboxSwipeTracking || e.changedTouches.length !== 1) {
+        lightboxSwipeTracking = false;
+        return;
+      }
+      const diff = touchStartX - e.changedTouches[0].screenX;
+      lightboxSwipeTracking = false;
+      if (Math.abs(diff) > 50) navigateLightbox(diff > 0 ? 1 : -1);
+    }, { passive: true });
+    lightboxContent.addEventListener('touchcancel', () => {
+      lightboxSwipeTracking = false;
+    }, { passive: true });
+
+    /* ========================================
+       TUS UPLOAD
+       ======================================== */
+    function triggerUpload() {
+      if (isInternal) return;
+
+      if (verifyState !== 'verified') {
+        if (!modalOverlay.classList.contains('active')) {
+          showModal();
+        }
+        setVerifyState('verifying');
+        window._afterVerify = () => fileInput.click();
+        resetTurnstile();
+        return;
+      }
+
+      hideModal();
+      fileInput.click();
+    }
+    uploadBtn.addEventListener('click', triggerUpload);
+    fileInput.addEventListener('cancel', () => setGridGrayed(false));
+
+    fileInput.addEventListener('change', async (e) => {
+      if (isInternal) return;
+      const files = Array.from(e.target.files);
+      if (files.length === 0) { setGridGrayed(false); return; }
+
+      // Validate
+      const valid = [], invalid = [];
+      for (const f of files) {
+        if (f.size > MAX_FILE_SIZE) invalid.push({ file: f, reason: `Too large (>${MAX_FILE_LABEL})` });
+        else if (!f.type.startsWith('image/') && !f.type.startsWith('video/')) invalid.push({ file: f, reason: 'Invalid type' });
+        else valid.push(f);
+      }
+
+      if (invalid.length && !valid.length) {
+        alert(`Cannot upload:\n${invalid.map(i => `• ${i.file.name}: ${i.reason}`).join('\n')}`);
+        setGridGrayed(false);
+        return;
+      }
+
+      // Session validity probe (gesture already consumed, async is safe)
+      try {
+        await fetchWithReauth(API.gallery(1, 0));
+      } catch (_) {}
+
+      // Reset state
+      uploadQueue = valid.slice();
+      activeUploads = [];
+      isPaused = false;
+      uploadStats = { completed: 0, total: valid.length, failed: 0, totalBytes: valid.reduce((a, f) => a + f.size, 0) };
+
+      showUploadPanel();
+      startNextUploads();
+      fileInput.value = '';
+    });
+
+    function startNextUploads() {
+      while (!isPaused && activeUploads.length < PARALLEL_UPLOADS && uploadQueue.length > 0) {
+        const file = uploadQueue.shift();
+        startTusUpload(file);
+      }
+    }
+
+    function startTusUpload(file) {
+      const upload = new tus.Upload(file, {
+        endpoint: TUS_ENDPOINT,
+        chunkSize: CHUNK_SIZE,
+        retryDelays: RETRY_DELAYS,
+        metadata: {
+          filename: file.name,
+          filetype: file.type,
+        },
+        onError: (error) => {
+          console.error('Upload failed:', file.name, error);
+          uploadStats.failed++;
+          uploadStats.completed++;
+          removeActiveUpload(upload);
+          updateUploadUI();
+          startNextUploads();
+          checkUploadComplete();
+        },
+        onProgress: (bytesUploaded, bytesTotal) => {
+          upload._progress = bytesUploaded;
+          updateUploadUI();
+        },
+        onSuccess: () => {
+          uploadStats.completed++;
+          removeActiveUpload(upload);
+          updateUploadUI();
+          startNextUploads();
+
+          const uploadId = extractUploadId(upload.url);
+          if (uploadId) {
+            const isPhoto = file.type.startsWith('image/');
+            const blobUrl = isPhoto ? URL.createObjectURL(file) : null;
+            pendingTiles.set(uploadId, {
+              id: uploadId,
+              type: isPhoto ? 'image' : 'video',
+              blobUrl,
+              thumbReady: false,
+              previewReady: false,
+              createdAtMs: Date.now(),
+            });
+            savePendingToStorage();
+            displayItems = getDisplayItems();
+            const html = pendingTileTemplate(pendingTiles.get(uploadId));
+            grid.querySelector('.empty-state')?.remove();
+            grid.insertAdjacentHTML('afterbegin', html);
+            startPollForId(uploadId);
+          }
+
+          checkUploadComplete();
+        },
+      });
+
+      upload._progress = 0;  // Track progress (no public API for this)
+      activeUploads.push(upload);
+
+      // Check for previous upload to resume
+      upload.findPreviousUploads().then((prev) => {
+        if (prev.length > 0) {
+          upload.resumeFromPreviousUpload(prev[0]);
+        }
+        upload.start();
+      });
+    }
+
+    function removeActiveUpload(upload) {
+      const idx = activeUploads.indexOf(upload);
+      if (idx !== -1) activeUploads.splice(idx, 1);
+    }
+
+    function pauseUploads() {
+      isPaused = true;
+      activeUploads.forEach(u => u.abort());
+    }
+
+    function resumeUploads() {
+      isPaused = false;
+      // Re-queue aborted uploads
+      activeUploads.forEach(u => uploadQueue.unshift(u.file));  // Use public API
+      activeUploads = [];
+      startNextUploads();
+    }
+
+    function checkUploadComplete() {
+      if (uploadStats.completed === uploadStats.total) {
+        showUploadComplete();
+        setTimeout(() => {
+          hideUploadPanel();
+          setGridGrayed(false);
+        }, 1500);
+      }
+    }
+
+    /* ========================================
+       UPLOAD UI
+       ======================================== */
+    function showUploadPanel() {
+      uploadPanelContent.innerHTML = `
+        <div class="upload-header">
+          <span class="upload-title">Uploading ${uploadStats.total} file${uploadStats.total > 1 ? 's' : ''}...</span>
+          <div class="upload-controls">
+            <button id="pauseBtn">Pause</button>
+          </div>
+        </div>
+        <div class="upload-progress">
+          <div class="upload-bar"><div class="upload-bar-fill" id="uploadBarFill"></div></div>
+        </div>
+        <div class="upload-stats">
+          <span id="uploadStatus">0 / ${uploadStats.total}</span>
+          <span class="percent" id="uploadPercent">0%</span>
+        </div>
+        <div class="upload-hint">Uploads resume automatically if interrupted</div>
+      `;
+      uploadPanel.classList.add('active');
+
+      $('#pauseBtn').addEventListener('click', () => {
+        if (isPaused) {
+          resumeUploads();
+          $('#pauseBtn').textContent = 'Pause';
+        } else {
+          pauseUploads();
+          $('#pauseBtn').textContent = 'Resume';
+        }
+      });
+    }
+
+    function updateUploadUI() {
+      const uploaded = activeUploads.reduce((sum, u) => sum + (u._progress || 0), 0);
+      const completedBytes = (uploadStats.completed - uploadStats.failed) * (uploadStats.totalBytes / uploadStats.total);
+      const totalProgress = Math.min(100, Math.round(((completedBytes + uploaded) / uploadStats.totalBytes) * 100));
+
+      const barFill = $('#uploadBarFill');
+      const status = $('#uploadStatus');
+      const percent = $('#uploadPercent');
+
+      if (barFill) barFill.style.width = `${totalProgress}%`;
+      if (status) status.textContent = `${uploadStats.completed} / ${uploadStats.total}`;
+      if (percent) percent.textContent = `${totalProgress}%`;
+    }
+
+    function showUploadComplete() {
+      const { completed, failed } = uploadStats;
+      const success = completed - failed;
+      let msg = failed === 0
+        ? `${success} media item${success > 1 ? 's' : ''} uploaded`
+        : `${success} uploaded, ${failed} failed`;
+
+      uploadPanelContent.innerHTML = `
+        <div class="upload-complete">
+          <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+          <span>${msg}</span>
+        </div>
+      `;
+    }
+
+    function hideUploadPanel() { uploadPanel.classList.remove('active'); }
+
+    /* ========================================
+       UPLOAD ID EXTRACTION
+       ======================================== */
+    function extractUploadId(url) {
+      try {
+        const parsed = new URL(url, location.href);
+        return parsed.pathname.split('/').filter(Boolean).pop() || null;
+      } catch { return null; }
+    }
+
+    /* ========================================
+       PENDING TILE POLLING
+       ======================================== */
+    const PHOTO_THUMB_POLL_BASE_MS = __PHOTO_THUMB_POLL_BASE_MS__;
+    const PHOTO_THUMB_POLL_MAX_MS = __PHOTO_THUMB_POLL_MAX_MS__;
+    const PHOTO_PREVIEW_POLL_BASE_MS = __PHOTO_PREVIEW_POLL_BASE_MS__;
+    const PHOTO_PREVIEW_POLL_MAX_MS = __PHOTO_PREVIEW_POLL_MAX_MS__;
+    const VIDEO_PREVIEW_EARLY_BASE_MS = __VIDEO_PREVIEW_EARLY_BASE_MS__;
+    const VIDEO_PREVIEW_EARLY_MAX_MS = __VIDEO_PREVIEW_EARLY_MAX_MS__;
+    const VIDEO_PREVIEW_LATE_MS = __VIDEO_PREVIEW_LATE_MS__;
+    const VIDEO_PREVIEW_EARLY_WINDOW_MS = __VIDEO_PREVIEW_EARLY_WINDOW_MS__;
+
+    function buildProgressivePollSchedule(baseMs, maxMs, steps) {
+      const safeSteps = Math.max(1, steps | 0);
+      const safeBase = Math.max(1, baseMs | 0);
+      const safeMax = Math.max(safeBase, maxMs | 0);
+
+      const schedule = [];
+      let nextDelay = safeBase;
+      for (let i = 0; i < safeSteps; i++) {
+        schedule.push(Math.min(nextDelay, safeMax));
+        if (nextDelay >= safeMax) continue;
+        nextDelay = Math.min(safeMax, nextDelay * 2);
+      }
+      return schedule;
+    }
+
+    const PHOTO_THUMB_SCHEDULE = buildProgressivePollSchedule(
+      PHOTO_THUMB_POLL_BASE_MS,
+      PHOTO_THUMB_POLL_MAX_MS,
+      5
+    );
+    const PHOTO_PREVIEW_SCHEDULE = buildProgressivePollSchedule(
+      PHOTO_PREVIEW_POLL_BASE_MS,
+      PHOTO_PREVIEW_POLL_MAX_MS,
+      4
+    );
+    const VIDEO_PREVIEW_SCHEDULE_EARLY = buildProgressivePollSchedule(
+      VIDEO_PREVIEW_EARLY_BASE_MS,
+      VIDEO_PREVIEW_EARLY_MAX_MS,
+      4
+    );
+    const VIDEO_PREVIEW_SCHEDULE_LATE = [Math.max(1, VIDEO_PREVIEW_LATE_MS | 0)];
+
+    function getScheduleDelay(schedule, idx) {
+      const max = schedule[Math.min(idx, schedule.length - 1)];
+      return Math.random() * max;
+    }
+
+    function startPollForId(id) {
+      if (pollManager.needsVerify) return;
+      const tile = pendingTiles.get(id);
+      if (!tile) return;
+      const entry = { type: tile.type, thumbDone: false, previewDone: false, scheduleIdx: 0, startedAt: Date.now(), timer: null };
+      pollManager.active.set(id, entry);
+      schedulePoll(id);
+    }
+
+    function schedulePoll(id) {
+      if (pollManager.needsVerify || pollManager.paused) return;
+      const entry = pollManager.active.get(id);
+      if (!entry) return;
+      clearTimeout(entry.timer);
+
+      let schedule;
+      if (entry.type === 'image') {
+        schedule = entry.thumbDone ? PHOTO_PREVIEW_SCHEDULE : PHOTO_THUMB_SCHEDULE;
+      } else {
+        const elapsed = Date.now() - entry.startedAt;
+        schedule = elapsed < VIDEO_PREVIEW_EARLY_WINDOW_MS ? VIDEO_PREVIEW_SCHEDULE_EARLY : VIDEO_PREVIEW_SCHEDULE_LATE;
+      }
+
+      const delay = getScheduleDelay(schedule, entry.scheduleIdx);
+      entry.timer = setTimeout(() => executePoll(id), delay);
+    }
+
+    async function executePoll(id) {
+      const entry = pollManager.active.get(id);
+      if (!entry || pollManager.needsVerify) return;
+
+      const tile = pendingTiles.get(id);
+      if (!tile) { pollManager.active.delete(id); return; }
+
+      if (pollManager.inflight >= pollManager.maxInflight) {
+        entry.timer = setTimeout(
+          () => executePoll(id),
+          UI_TIMING.POLL_INFLIGHT_BACKPRESSURE_BASE_MS + Math.random() * UI_TIMING.POLL_INFLIGHT_BACKPRESSURE_JITTER_MS
+        );
+        return;
+      }
+
+      let endpoint;
+      if (entry.type === 'image') {
+        endpoint = entry.thumbDone ? API.preview(id) : API.thumbnail(id);
+      } else {
+        endpoint = API.preview(id);
+      }
+
+      pollManager.inflight++;
+      try {
+        const res = await fetch(endpoint, { headers: { Range: 'bytes=0-0' }, cache: 'no-store', credentials: 'same-origin' });
+
+        if (res.status === 200 || res.status === 206) {
+          if (entry.type === 'image' && !entry.thumbDone) {
+            entry.thumbDone = true;
+            tile.thumbReady = true;
+            if (tile.blobUrl) { URL.revokeObjectURL(tile.blobUrl); tile.blobUrl = null; }
+            swapGridTile(id);
+            entry.scheduleIdx = 0;
+            schedulePoll(id);
+          } else if (entry.type === 'image' && entry.thumbDone) {
+            entry.previewDone = true;
+            tile.previewReady = true;
+            swapGridTile(id);
+            updateLightboxIfOpen(id);
+            pollManager.active.delete(id);
+          } else {
+            entry.previewDone = true;
+            tile.thumbReady = true;
+            tile.previewReady = true;
+            swapGridTile(id);
+            updateLightboxIfOpen(id);
+            pollManager.active.delete(id);
+          }
+          displayItems = getDisplayItems();
+        } else if (res.status === 404) {
+          entry.scheduleIdx++;
+          schedulePoll(id);
+        } else if (res.status === 401) {
+          handlePollAuth();
+        } else if (res.status === 410) {
+          removePendingTile(id);
+        }
+      } catch {
+        entry.scheduleIdx++;
+        schedulePoll(id);
+      } finally {
+        pollManager.inflight = Math.max(0, pollManager.inflight - 1);
+      }
+    }
+
+    function swapGridTile(id) {
+      const el = grid.querySelector(`.grid-item[data-id="${id}"]`);
+      if (!el) return;
+      const tile = pendingTiles.get(id);
+      if (!tile) return;
+      const tmp = document.createElement('div');
+      tmp.innerHTML = pendingTileTemplate({ ...tile, isPending: true });
+      const newEl = tmp.firstElementChild;
+      el.replaceWith(newEl);
+    }
+
+    function updateLightboxIfOpen(id) {
+      if (!lightbox.classList.contains('active')) return;
+      const item = displayItems[currentLightboxIndex];
+      if (!item || item.id !== id) return;
+      showLightboxAsset(currentLightboxIndex);
+    }
+
+    function removePendingTile(id) {
+      clearPendingTileState(id, true);
+      displayItems = getDisplayItems();
+      savePendingToStorage();
+    }
+
+    function clearPendingTileState(id, removeElement) {
+      if (lightbox.classList.contains('active') && displayItems[currentLightboxIndex]?.id === id) {
+        closeLightbox();
+      }
+      const entry = pollManager.active.get(id);
+      if (entry) { clearTimeout(entry.timer); pollManager.active.delete(id); }
+      const tile = pendingTiles.get(id);
+      if (tile?.blobUrl) URL.revokeObjectURL(tile.blobUrl);
+      pendingTiles.delete(id);
+      if (removeElement) {
+        grid.querySelector(`.grid-item[data-id="${id}"]`)?.remove();
+      }
+    }
+
+    function prunePublishedPendingTiles() {
+      const serverIds = new Set(serverAssets.map(a => a.id));
+      for (const id of [...pendingTiles.keys()]) {
+        if (!serverIds.has(id)) continue;
+        clearPendingTileState(id, false);
+      }
+    }
+
+    function handlePollAuth() {
+      pollManager.needsVerify = true;
+      for (const [, entry] of pollManager.active) { clearTimeout(entry.timer); }
+      if (galleryPollTimer) { clearTimeout(galleryPollTimer); galleryPollTimer = null; }
+      verifyPrompt.style.display = 'block';
+    }
+
+    function resumeAllPolls() {
+      pollManager.needsVerify = false;
+      verifyPrompt.style.display = 'none';
+      for (const [id] of pollManager.active) { schedulePoll(id); }
+      startGalleryPoll();
+    }
+
+    function startPendingPolls() {
+      for (const [id] of pendingTiles) {
+        if (!pollManager.active.has(id)) startPollForId(id);
+      }
+    }
+
+    // Pause/resume on visibility change
+    document.addEventListener('visibilitychange', () => {
+      resetPullGesture();
+      if (document.visibilityState === 'hidden') {
+        pollManager.paused = true;
+        for (const [, entry] of pollManager.active) { clearTimeout(entry.timer); }
+        if (galleryPollTimer) { clearTimeout(galleryPollTimer); galleryPollTimer = null; }
+      } else {
+        pollManager.paused = false;
+        if (!pollManager.needsVerify) {
+          for (const [id] of pollManager.active) { schedulePoll(id); }
+          startGalleryPoll();
+        }
+      }
+    });
+
+    /* ========================================
+       LOCALSTORAGE PERSISTENCE
+       ======================================== */
+    function savePendingToStorage() {
+      const serverIds = new Set(serverAssets.map(a => a.id));
+      const now = Date.now();
+      const entries = [...pendingTiles.values()]
+        .filter(p => !serverIds.has(p.id) && (now - p.createdAtMs) < PENDING_MAX_AGE_MS)
+        .sort((a, b) => b.createdAtMs - a.createdAtMs)
+        .slice(0, PENDING_MAX_ITEMS)
+        .map(p => ({ id: p.id, type: p.type, createdAtMs: p.createdAtMs }));
+      localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(entries));
+    }
+
+    function loadPendingFromStorage() {
+      try {
+        const raw = localStorage.getItem(PENDING_STORAGE_KEY);
+        if (!raw) return;
+        const entries = JSON.parse(raw);
+        if (!Array.isArray(entries)) {
+          localStorage.removeItem(PENDING_STORAGE_KEY);
+          return;
+        }
+        const now = Date.now();
+        const valid = entries
+          .filter(e => e.id && e.type && e.createdAtMs && (now - e.createdAtMs) < PENDING_MAX_AGE_MS)
+          .sort((a, b) => b.createdAtMs - a.createdAtMs)
+          .slice(0, PENDING_MAX_ITEMS);
+        for (const e of valid) {
+          pendingTiles.set(e.id, {
+            id: e.id, type: e.type, blobUrl: null,
+            thumbReady: false, previewReady: false,
+            createdAtMs: e.createdAtMs,
+          });
+        }
+      } catch { localStorage.removeItem(PENDING_STORAGE_KEY); }
+    }
+
+    /* ========================================
+       GALLERY POLL (NEW UPLOADS FROM OTHERS)
+       ======================================== */
+    function startGalleryPoll() {
+      if (galleryPollTimer || isInternal || pollManager.needsVerify || pollManager.paused) return;
+      const jitter = galleryPollDelay + galleryPollDelay * UI_TIMING.GALLERY_POLL_JITTER_RATIO * (Math.random() * 2 - 1);
+      galleryPollTimer = setTimeout(doGalleryPoll, jitter);
+    }
+
+    async function doGalleryPoll() {
+      galleryPollTimer = null;
+      if (pollManager.needsVerify || pollManager.paused) return;
+      const seq = ++galleryPollSeq;
+      const refreshSeqAtStart = manualRefreshSeq;
+      const isStalePoll = () => seq !== galleryPollSeq || refreshSeqAtStart !== manualRefreshSeq;
+      try {
+        const res = await fetch(API.gallery(1, 0), { cache: 'no-store', credentials: 'same-origin' });
+        if (isStalePoll()) return;
+        if (res.status === 401) { handlePollAuth(); return; }
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if (isStalePoll()) return;
+        const newTotal = data.total || 0;
+        const nextHeartRevision = typeof data.heartRevision === 'number' ? data.heartRevision : null;
+        if (
+          manualRefreshInFlight === null &&
+          refreshBaselineTotal !== null &&
+          newTotal > refreshBaselineTotal
+        ) {
+          newUploadsPrompt.style.display = 'block';
+        }
+        if (nextHeartRevision !== null && nextHeartRevision !== lastSyncedHeartRevision) {
+          const synced = await syncHeartCounts(isStalePoll);
+          if (isStalePoll()) return;
+          if (synced) {
+            lastSyncedHeartRevision = nextHeartRevision;
+          }
+        }
+        galleryPollDelay = GALLERY_POLL_BASE_MS;
+      } catch {
+        if (isStalePoll()) return;
+        galleryPollDelay = Math.min(galleryPollDelay * 2, GALLERY_POLL_MAX_MS);
+      }
+      if (isStalePoll()) return;
+      startGalleryPoll();
+    }
+
+    newUploadsPrompt.addEventListener('click', () => {
+      newUploadsPrompt.style.display = 'none';
+      refreshGalleryNow('prompt');
+    });
+
+    verifyPrompt.addEventListener('click', async () => {
+      verifyPrompt.style.display = 'none';
+      await rerunVerification();
+      resumeAllPolls();
+    });
+
+    /* ========================================
+       WARN ON LEAVE
+       ======================================== */
+    window.addEventListener('beforeunload', (e) => {
+      if (activeUploads.length > 0 || uploadQueue.length > 0) {
+        e.preventDefault();
+        e.returnValue = 'Uploads in progress. Leave anyway?';
+        return e.returnValue;
+      }
+    });
+
+    /* ========================================
+       INIT
+       ======================================== */
+    if (isInternal) {
+      hideModal();
+      fetchAssets();
+      setVerifyState('verified');
+    } else {
+      initTurnstile();
+      loadPendingFromStorage();
+      fetchAssets(false, bootstrapVerification).then((success) => {
+        if (!success) return;
+        setVerifyState('verified');
+        startPendingPolls();
+        startGalleryPoll();
+      });
+    }
+  </script>
+</body>
+</html>

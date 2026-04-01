@@ -1,0 +1,171 @@
+{
+	# Unprivileged ports (Caddy runs as a user LaunchAgent on macOS)
+	https_port 8443
+	http_port 8081
+
+	acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN} {
+		propagation_delay 60s      # Wait for DNS to propagate past AdGuard cache
+		propagation_timeout -1     # Skip local verification (AdGuard cache interferes; Let's Encrypt checks authoritative NS directly)
+	}
+}
+
+(logging) {
+	log {
+		# HTTP access logs only. Process stdout/stderr is captured separately by launchd.
+		output file __BASE_DIRECTORY__/logs/caddy-access.log {
+			roll_size 100MiB
+			roll_keep 5
+		}
+	}
+}
+
+(static-assets) {
+	@static_assets {
+		path /favicon.ico /logo.webp /logodark.webp /tus.min.js
+	}
+	handle @static_assets {
+		@immutable {
+			path /favicon.ico /logo.webp /logodark.webp
+		}
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+
+		@vendor path /tus.min.js
+		header @vendor Cache-Control "public, max-age=86400"
+
+		file_server
+	}
+}
+
+(html-shell) {
+	@html path / /index.html
+	handle @html {
+		header Cache-Control "public, max-age=3600"
+		rewrite * /index.html
+		file_server
+	}
+}
+
+(catch-all) {
+	handle {
+		respond 404
+	}
+}
+
+https://__DOMAIN__:8443 {
+	import logging
+	bind __WIREGUARD_BIND_IP__
+	encode zstd gzip
+	root * __REPO_DIR__/deploy
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex"
+		Content-Security-Policy "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' https://challenges.cloudflare.com '__CSP_SCRIPT_HASH__'; script-src-attr 'none'; style-src '__CSP_STYLE_HASH__'; style-src-attr 'none'; img-src 'self' blob:; media-src 'self'; connect-src 'self'; frame-src https://challenges.cloudflare.com"
+		-Server
+	}
+
+	# Block known bot user-agents
+	@bots {
+		header User-Agent *bot*
+		header User-Agent *crawler*
+		header User-Agent *scraper*
+		header User-Agent *spider*
+		header User-Agent curl*
+		header User-Agent wget*
+		header User-Agent python-requests*
+	}
+	respond @bots "Forbidden" 403
+	handle /files/* {
+		reverse_proxy 127.0.0.1:1080 {
+			header_up X-Forwarded-Host {host}
+			header_up X-Forwarded-Proto {scheme}
+			transport http {
+				read_timeout 5m
+				write_timeout 5m
+				versions 1.1
+			}
+		}
+	}
+
+	handle /api/turnstile/verify {
+		# Loopback pin avoids exposing proxy hops if BIND_ADDRESS is widened.
+		reverse_proxy 127.0.0.1:__PUBLIC_PORT__
+	}
+
+	handle /api/gallery {
+		reverse_proxy 127.0.0.1:__PUBLIC_PORT__
+	}
+
+	handle /api/heart-counts {
+		reverse_proxy 127.0.0.1:__PUBLIC_PORT__
+	}
+
+	handle /api/assets/*/heart {
+		reverse_proxy 127.0.0.1:__PUBLIC_PORT__
+	}
+
+	handle /api/thumbs/* {
+		reverse_proxy 127.0.0.1:__PUBLIC_PORT__
+	}
+
+	handle /api/preview/* {
+		reverse_proxy 127.0.0.1:__PUBLIC_PORT__
+	}
+
+	import static-assets
+	import html-shell
+
+	handle /robots.txt {
+		header Content-Type "text/plain"
+		respond "User-agent: *
+Disallow: /" 200
+	}
+
+	import catch-all
+}
+
+localhost:8080, 127.0.0.1:8080 {
+	import logging
+	bind 127.0.0.1
+	encode zstd gzip
+	root * __REPO_DIR__/deploy
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' '__CSP_SCRIPT_HASH__'; script-src-attr 'none'; style-src '__CSP_STYLE_HASH__'; style-src-attr 'none'; img-src 'self'; media-src 'self'; connect-src 'self'"
+		-Server
+	}
+
+	handle /api/gallery {
+		reverse_proxy 127.0.0.1:__INTERNAL_PORT__ {
+			header_up Authorization {env.INTERNAL_AUTH_SECRET}
+		}
+	}
+
+	handle /api/assets/* {
+		reverse_proxy 127.0.0.1:__INTERNAL_PORT__ {
+			header_up Authorization {env.INTERNAL_AUTH_SECRET}
+		}
+	}
+
+	handle /api/thumbs/* {
+		reverse_proxy 127.0.0.1:__INTERNAL_PORT__ {
+			header_up Authorization {env.INTERNAL_AUTH_SECRET}
+		}
+	}
+
+	handle /api/preview/* {
+		reverse_proxy 127.0.0.1:__INTERNAL_PORT__ {
+			header_up Authorization {env.INTERNAL_AUTH_SECRET}
+		}
+	}
+
+	import static-assets
+	import html-shell
+	import catch-all
+}

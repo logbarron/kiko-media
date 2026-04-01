@@ -1,0 +1,48 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode (if project is opened in Xcode)
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+*.xcscmblueprint
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Runtime data
+/uploads/
+/thumbs/
+/previews/
+/logs/
+/moderated/
+/metadata.db
+/metadata.db-wal
+/metadata.db-shm
+/benchmark-prior.json
+/benchmark-prior.candidate.json
+
+# Benchmark output
+/bench-results/
+
+# Local tooling
+/.claude/
+
+# Generated deploy artifacts
+/deploy/Caddyfile
+/deploy/index.html
+/deploy/worker.swift

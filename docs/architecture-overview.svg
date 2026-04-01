@@ -1,0 +1,341 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1390" viewBox="0 0 1200 1390"
+     role="img" aria-labelledby="dia-title dia-desc"
+     font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif">
+  <title id="dia-title">kiko-media Architecture</title>
+  <desc id="dia-desc">Vertical layered topology of the kiko-media photo and video upload system, showing network boundaries from external internet services through VPS and host Mac to archive storage.</desc>
+
+  <defs>
+    <style>
+      .layer-label { font-size: 13px; font-weight: 700; letter-spacing: 1.5px; }
+      .layer-sub { font-size: 11px; font-weight: 500; }
+      .box-name { font-size: 14px; font-weight: 700; fill: #334155; }
+      .box-detail { font-size: 11px; font-weight: 500; fill: #64748b; }
+      .split-header { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; }
+      .split-item { font-size: 10px; font-weight: 500; fill: #64748b; font-family: "SF Mono", "Menlo", monospace; }
+      .note-title { font-size: 12px; font-weight: 700; fill: #1e40af; }
+      .note-text { font-size: 11px; font-weight: 500; fill: #475569; }
+      .legend-title { font-size: 13px; font-weight: 700; letter-spacing: 1.5px; fill: #475569; }
+      .legend-section { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; fill: #64748b; }
+      .legend-item { font-size: 12px; font-weight: 500; fill: #475569; }
+    </style>
+    <filter id="shadow" x="-2%" y="-4%" width="104%" height="112%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-opacity="0.05" flood-color="#000"/>
+    </filter>
+    <marker id="arrow-blue" markerWidth="7" markerHeight="7" refX="6" refY="2.5" orient="auto">
+      <path d="M0,0 L0,5 L7,2.5z" fill="#3b82f6"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="7" markerHeight="7" refX="6" refY="2.5" orient="auto">
+      <path d="M0,0 L0,5 L7,2.5z" fill="#f97316"/>
+    </marker>
+    <marker id="arrow-orange-up" markerWidth="7" markerHeight="7" refX="1" refY="2.5" orient="auto">
+      <path d="M7,0 L7,5 L0,2.5z" fill="#f97316"/>
+    </marker>
+
+    <marker id="arrow-green" markerWidth="7" markerHeight="7" refX="6" refY="2.5" orient="auto">
+      <path d="M0,0 L0,5 L7,2.5z" fill="#10b981"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="7" markerHeight="7" refX="6" refY="2.5" orient="auto">
+      <path d="M0,0 L0,5 L7,2.5z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="1390" fill="#fff"/>
+
+  <!-- HEADER -->
+  <text x="600" y="44" text-anchor="middle" font-size="28" font-weight="700" fill="#0f172a">kiko-media Architecture</text>
+  <text x="600" y="70" text-anchor="middle" font-size="14" font-weight="500" fill="#64748b">Photo &amp; video upload system for single-day events</text>
+  <line x1="48" y1="90" x2="1152" y2="90" stroke="#e2e8f0" stroke-width="1"/>
+
+  <!-- LAYER: EXTERNAL -->
+  <g id="layer-external">
+    <rect x="48" y="106" width="1104" height="140" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="68" y="126" class="layer-label" fill="#64748b">EXTERNAL</text>
+    <text x="68" y="142" class="layer-sub" fill="#94a3b8">Internet / Public Services</text>
+
+    <g>
+      <rect x="159" y="152" width="220" height="72" rx="6" fill="#fff" stroke="#cbd5e1" filter="url(#shadow)"/>
+      <rect x="160" y="153" width="218" height="3" fill="#94a3b8"/>
+      <text x="269" y="182" text-anchor="middle" class="box-name">Guest Browser</text>
+      <text x="269" y="200" text-anchor="middle" class="box-detail">Phone / Desktop</text>
+    </g>
+
+    <g>
+      <rect x="490" y="152" width="220" height="72" rx="6" fill="#fff" stroke="#cbd5e1" filter="url(#shadow)"/>
+      <rect x="491" y="153" width="218" height="3" fill="#94a3b8"/>
+      <text x="600" y="182" text-anchor="middle" class="box-name">Cloudflare DNS</text>
+      <text x="600" y="200" text-anchor="middle" class="box-detail">DNS-only, no proxy</text>
+    </g>
+
+    <g>
+      <rect x="821" y="152" width="220" height="72" rx="6" fill="#fff" stroke="#cbd5e1" filter="url(#shadow)"/>
+      <rect x="822" y="153" width="218" height="3" fill="#94a3b8"/>
+      <text x="931" y="182" text-anchor="middle" class="box-name">Cloudflare Turnstile</text>
+      <text x="931" y="200" text-anchor="middle" class="box-detail">Bot verification</text>
+    </g>
+  </g>
+
+  <!-- LAYER: VPS -->
+  <g id="layer-vps">
+    <rect x="48" y="254" width="1104" height="118" rx="8" fill="#fef2f2" stroke="#fecaca"/>
+    <text x="68" y="274" class="layer-label" fill="#991b1b">VPS</text>
+    <text x="68" y="290" class="layer-sub" fill="#dc2626">Public relay only</text>
+    <text x="68" y="306" class="layer-sub" fill="#dc2626">TCP passthrough + encrypted tunnel</text>
+
+    <g>
+      <rect x="345" y="294" width="210" height="72" rx="6" fill="#fff" stroke="#fca5a5" filter="url(#shadow)"/>
+      <rect x="346" y="295" width="208" height="3" fill="#ef4444"/>
+      <text x="450" y="324" text-anchor="middle" class="box-name">WireGuard Tunnel</text>
+      <text x="450" y="342" text-anchor="middle" class="box-detail">Encrypted link to Mac</text>
+    </g>
+
+    <g>
+      <rect x="645" y="294" width="200" height="72" rx="6" fill="#fff" stroke="#fca5a5" filter="url(#shadow)"/>
+      <rect x="646" y="295" width="198" height="3" fill="#ef4444"/>
+      <text x="745" y="324" text-anchor="middle" class="box-name">HAProxy</text>
+      <text x="745" y="342" text-anchor="middle" class="box-detail">:443 TCP passthrough</text>
+    </g>
+  </g>
+
+  <!-- LAYER: HOST MAC -->
+  <g id="layer-host-mac">
+    <rect x="48" y="380" width="1104" height="480" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="68" y="400" class="layer-label" fill="#1e40af">HOST MAC</text>
+    <text x="68" y="416" class="layer-sub" fill="#3b82f6">macOS 26, Apple Silicon</text>
+
+    <!-- Caddy public -->
+    <g>
+      <rect x="280" y="428" width="260" height="84" rx="6" fill="#fff" stroke="#93c5fd" filter="url(#shadow)"/>
+      <rect x="281" y="429" width="258" height="3" fill="#3b82f6"/>
+      <text x="410" y="452" text-anchor="middle" class="box-name">Caddy (Public)</text>
+      <text x="410" y="470" text-anchor="middle" class="box-detail">TLS endpoint :8443</text>
+      <text x="410" y="486" text-anchor="middle" class="box-detail">uploads &#x2192; tusd</text>
+      <text x="410" y="502" text-anchor="middle" class="box-detail">public APIs &#x2192; app</text>
+    </g>
+
+    <!-- Caddy internal -->
+    <g>
+      <rect x="600" y="428" width="200" height="84" rx="6" fill="#fff" stroke="#93c5fd" filter="url(#shadow)"/>
+      <rect x="601" y="429" width="198" height="3" fill="#3b82f6"/>
+      <text x="700" y="452" text-anchor="middle" class="box-name">Caddy (Internal)</text>
+      <text x="700" y="470" text-anchor="middle" class="box-detail">localhost:8080</text>
+      <text x="700" y="486" text-anchor="middle" class="box-detail">moderation UI + API</text>
+      <text x="700" y="502" text-anchor="middle" class="box-detail">not public</text>
+    </g>
+
+    <!-- LOOPBACK ZONE (expanded: h=240 to h=290) -->
+    <g id="loopback-zone">
+      <rect x="80" y="528" width="1040" height="290" rx="6" fill="#fafbff" stroke="#93c5fd" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <text x="100" y="546" class="layer-label" fill="#1e40af" letter-spacing="1">LOOPBACK ZONE</text>
+      <text x="100" y="560" class="layer-sub" fill="#60a5fa">Internal-only (localhost)</text>
+
+      <!-- tusd (row 1, left) -->
+      <g>
+        <rect x="260" y="576" width="200" height="64" rx="6" fill="#fff" stroke="#fdba74" filter="url(#shadow)"/>
+        <rect x="261" y="577" width="198" height="3" fill="#f97316"/>
+        <text x="360" y="604" text-anchor="middle" class="box-name">tusd</text>
+        <text x="360" y="620" text-anchor="middle" class="box-detail">127.0.0.1:1080</text>
+      </g>
+
+      <!-- kiko-media (row 1, right; dual listener split box) -->
+      <g>
+        <rect x="600" y="572" width="340" height="108" rx="6" fill="#fff" stroke="#fdba74" stroke-width="2" filter="url(#shadow)"/>
+        <rect x="602" y="574" width="336" height="3" fill="#f97316"/>
+        <text x="770" y="594" text-anchor="middle" class="box-name">kiko-media</text>
+        <text x="770" y="608" text-anchor="middle" class="box-detail">single process, two listeners</text>
+        <line x1="610" y1="616" x2="928" y2="616" stroke="#e2e8f0" stroke-width="1"/>
+        <line x1="770" y1="616" x2="770" y2="672" stroke="#e2e8f0" stroke-width="1"/>
+        <!-- public half (left: x=600..770, center x=685) -->
+        <text x="685" y="634" text-anchor="middle" class="split-header" fill="#1e40af">pub :3001</text>
+        <text x="685" y="648" text-anchor="middle" class="split-item">gallery, thumbs, hearts</text>
+        <text x="685" y="662" text-anchor="middle" class="split-item">preview, turnstile</text>
+        <!-- internal half (right: x=770..940, center x=855) -->
+        <text x="855" y="634" text-anchor="middle" class="split-header" fill="#9a3412">int :3002</text>
+        <text x="855" y="648" text-anchor="middle" class="split-item">hooks, moderation</text>
+        <text x="855" y="662" text-anchor="middle" class="split-item">gallery, assets, media</text>
+      </g>
+
+      <!-- Storage (row 2, left; swapped to left of MediaProcessor) -->
+      <g>
+        <rect x="260" y="720" width="280" height="72" rx="6" fill="#fff" stroke="#fdba74" filter="url(#shadow)"/>
+        <rect x="261" y="721" width="278" height="3" fill="#f97316"/>
+        <text x="400" y="750" text-anchor="middle" class="box-name">Runtime Data</text>
+        <text x="400" y="768" text-anchor="middle" class="box-detail">uploads/ thumbs/ previews/ metadata.db</text>
+      </g>
+
+      <!-- MediaProcessor (row 2, right; below kiko-media) -->
+      <g>
+        <rect x="600" y="720" width="240" height="72" rx="6" fill="#fff" stroke="#fdba74" filter="url(#shadow)"/>
+        <rect x="601" y="721" width="238" height="3" fill="#f97316"/>
+        <text x="720" y="750" text-anchor="middle" class="box-name">MediaProcessor</text>
+        <text x="720" y="768" text-anchor="middle" class="box-detail">image | video processing</text>
+      </g>
+    </g>
+
+    <!-- Moderator Browser (right side, under Caddy Internal) -->
+    <g>
+      <rect x="830" y="428" width="170" height="72" rx="6" fill="#fff" stroke="#93c5fd" filter="url(#shadow)"/>
+      <rect x="831" y="429" width="168" height="3" fill="#3b82f6"/>
+      <text x="915" y="458" text-anchor="middle" class="box-name">Moderator Browser</text>
+      <text x="915" y="476" text-anchor="middle" class="box-detail">localhost:8080</text>
+    </g>
+  </g>
+
+  <!-- LAYER: THUNDERBOLT WORKERS -->
+  <g id="layer-tb-workers">
+    <rect x="48" y="868" width="1104" height="112" rx="8" fill="#faf5ff" stroke="#d8b4fe"/>
+    <text x="68" y="888" class="layer-label" fill="#6b21a8">THUNDERBOLT WORKERS (optional)</text>
+    <text x="68" y="904" class="layer-sub" fill="#a855f7">Thunderbolt bridge</text>
+
+    <g>
+      <rect x="440" y="912" width="220" height="60" rx="6" fill="#fff" stroke="#c084fc" filter="url(#shadow)"/>
+      <rect x="441" y="913" width="218" height="3" fill="#a855f7"/>
+      <text x="550" y="938" text-anchor="middle" class="box-name">Worker Mac</text>
+      <text x="550" y="956" text-anchor="middle" class="box-detail">video transcode &#xb7; :12400</text>
+    </g>
+
+    <g>
+      <rect x="720" y="912" width="220" height="60" rx="6" fill="#fff" stroke="#c084fc" filter="url(#shadow)"/>
+      <rect x="721" y="913" width="218" height="3" fill="#a855f7"/>
+      <text x="830" y="938" text-anchor="middle" class="box-name">Worker Mac</text>
+      <text x="830" y="956" text-anchor="middle" class="box-detail">video transcode &#xb7; :12400</text>
+    </g>
+  </g>
+
+  <!-- LAYER: ARCHIVE -->
+  <g id="layer-archive">
+    <rect x="48" y="988" width="1104" height="104" rx="8" fill="#fffbeb" stroke="#fde68a"/>
+    <text x="68" y="1008" class="layer-label" fill="#92400e">ARCHIVE</text>
+    <text x="68" y="1024" class="layer-sub" fill="#d97706">External Storage</text>
+
+    <g>
+      <rect x="340" y="1034" width="480" height="48" rx="6" fill="#fff" stroke="#fde68a" filter="url(#shadow)"/>
+      <rect x="341" y="1035" width="478" height="3" fill="#f59e0b"/>
+      <text x="580" y="1056" text-anchor="middle" class="box-name">External SSD</text>
+      <text x="580" y="1072" text-anchor="middle" class="box-detail">SHA-256 verified originals</text>
+    </g>
+  </g>
+
+  <!-- FLOW: PUBLIC INGRESS (blue) -->
+  <g id="flow-ingress" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- B1: Guest Browser to CF DNS (horizontal, External layer) -->
+    <line x1="379" y1="188" x2="490" y2="188" marker-end="url(#arrow-blue)"/>
+    <!-- B2: CF DNS to HAProxy (External to VPS, rightward) -->
+    <path d="M600,224 L600,250 Q600,258 608,258 L737,258 Q745,258 745,266 L745,294" marker-end="url(#arrow-blue)"/>
+    <!-- B3: HAProxy to WireGuard (horizontal, VPS layer, leftward) -->
+    <line x1="645" y1="330" x2="555" y2="330" marker-end="url(#arrow-blue)"/>
+    <!-- B4: WireGuard to Caddy pub (VPS to Host Mac, nearly straight drop) -->
+    <path d="M450,366 L450,390 Q450,398 442,398 L418,398 Q410,398 410,406 L410,428" marker-end="url(#arrow-blue)"/>
+    <!-- B5: Caddy pub to kiko-media pub (adjusted: kiko-media top now at y=572) -->
+    <path d="M410,512 L410,512 Q410,520 418,520 L677,520 Q685,520 685,528 L685,572" marker-end="url(#arrow-blue)"/>
+  </g>
+
+  <!-- FLOW: UPLOAD AND PROCESSING (orange) -->
+  <g id="flow-upload" fill="none" stroke="#f97316" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- O1: Caddy pub to tusd (vertical drop, /files/* route) -->
+    <path d="M395,512 L395,540 Q395,548 387,548 L368,548 Q360,548 360,556 L360,576" marker-end="url(#arrow-orange)"/>
+    <!-- O2: tusd to kiko-media (horizontal, post-finish webhook) -->
+    <line x1="460" y1="608" x2="600" y2="608" marker-end="url(#arrow-orange)"/>
+    <!-- O3: kiko-media to MediaProcessor (vertical drop, dispatch processing) -->
+    <path d="M720,680 L720,720" marker-end="url(#arrow-orange)"/>
+    <!-- O4: MediaProcessor to Storage (leftward, write thumbs/previews) -->
+    <line x1="600" y1="756" x2="540" y2="756" marker-end="url(#arrow-orange)"/>
+    <!-- O5: MediaProcessor trunk down, fork left to Worker Mac 1 -->
+    <path d="M720,792 L720,874 Q720,882 712,882 L558,882 Q550,882 550,890 L550,912" marker-start="url(#arrow-orange-up)" marker-end="url(#arrow-orange)"/>
+    <!-- O6: Fork right from trunk to Worker Mac 2 -->
+    <path d="M720,874 Q720,882 728,882 L822,882 Q830,882 830,890 L830,912" marker-end="url(#arrow-orange)"/>
+    <!-- O7: Storage to External SSD (straight vertical, left of Worker 1) -->
+    <path d="M420,792 L420,1034" marker-end="url(#arrow-orange)"/>
+  </g>
+
+  <!-- FLOW: MODERATION (green) -->
+  <g id="flow-moderation" fill="none" stroke="#10b981" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+    <!-- G1: Moderator Browser to Caddy Internal (short horizontal, adjacent boxes) -->
+    <line x1="830" y1="464" x2="800" y2="464" marker-end="url(#arrow-green)"/>
+    <!-- G2: Caddy Internal down to kiko-media int :3002 (L-path inside loopback zone) -->
+    <path d="M700,512 L700,532 Q700,540 708,540 L847,540 Q855,540 855,548 L855,572" marker-end="url(#arrow-green)"/>
+  </g>
+
+  <!-- FLOW: TURNSTILE VERIFICATION (dashed gray) -->
+  <g id="flow-turnstile" fill="none" stroke="#94a3b8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 4">
+    <!-- T1: Guest Browser to Turnstile (JS challenge, horizontal above boxes) -->
+    <path d="M269,152 L269,138 Q269,130 277,130 L923,130 Q931,130 931,138 L931,152" marker-end="url(#arrow-gray)"/>
+    <!-- T2: kiko-media siteverify to Turnstile (up right margin) -->
+    <path d="M940,626 L1052,626 Q1060,626 1060,618 L1060,196 Q1060,188 1052,188 L1041,188" marker-end="url(#arrow-gray)"/>
+  </g>
+
+  <!-- CHIP LABELS (arrow annotations) -->
+  <g id="chip-labels">
+    <!-- proxy: on B5, Caddy pub to kiko-media -->
+    <g>
+      <rect x="523" y="511" width="50" height="18" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="1"/>
+      <text x="548" y="524" text-anchor="middle" font-size="11" font-weight="600" fill="#3b82f6">proxy</text>
+    </g>
+    <!-- post-finish webhook: on O2, tusd to kiko-media -->
+    <g>
+      <rect x="482" y="599" width="66" height="18" rx="10" fill="#fafbff" stroke="#f97316" stroke-width="1"/>
+      <text x="515" y="612" text-anchor="middle" font-size="11" font-weight="600" fill="#f97316">webhook</text>
+    </g>
+    <!-- archive: on O7, Storage to External SSD -->
+    <g>
+      <rect x="392" y="830" width="56" height="18" rx="10" fill="#fff" stroke="#f97316" stroke-width="1"/>
+      <text x="420" y="843" text-anchor="middle" font-size="11" font-weight="600" fill="#f97316">archive</text>
+    </g>
+    <!-- transcode: on O5/O6 trunk, centered on x=720 like archive is on O7 -->
+    <g>
+      <rect x="676" y="830" width="88" height="18" rx="10" fill="#fff" stroke="#f97316" stroke-width="1"/>
+      <text x="720" y="843" text-anchor="middle" font-size="11" font-weight="600" fill="#f97316">transcode &#x2195;</text>
+    </g>
+    <!-- challenge: on T1, Guest Browser to Turnstile -->
+    <g>
+      <rect x="571" y="121" width="58" height="18" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1"/>
+      <text x="600" y="134" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8">challenge</text>
+    </g>
+    <!-- siteverify: on T2, kiko-media to Turnstile -->
+    <g>
+      <rect x="1026" y="391" width="68" height="18" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1"/>
+      <text x="1060" y="404" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8">siteverify</text>
+    </g>
+  </g>
+
+  <!-- LEGEND -->
+  <g id="legend">
+    <rect x="48" y="1100" width="1104" height="168" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="68" y="1122" class="legend-title">LEGEND</text>
+
+    <!-- Flow Paths -->
+    <text x="68" y="1144" class="legend-section">FLOW PATHS</text>
+    <line x1="68" y1="1158" x2="88" y2="1158" stroke="#3b82f6" stroke-width="3" stroke-linecap="round"/>
+    <text x="96" y="1162" class="legend-item">Public ingress</text>
+    <line x1="68" y1="1178" x2="88" y2="1178" stroke="#f97316" stroke-width="3" stroke-linecap="round"/>
+    <text x="96" y="1182" class="legend-item">Upload &amp; processing</text>
+    <line x1="68" y1="1198" x2="88" y2="1198" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="96" y="1202" class="legend-item">Moderation</text>
+    <line x1="68" y1="1218" x2="88" y2="1218" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-dasharray="6 4"/>
+    <text x="96" y="1222" class="legend-item">Turnstile verification</text>
+
+    <!-- Components -->
+    <text x="380" y="1144" class="legend-section">COMPONENTS</text>
+    <rect x="380" y="1148" width="16" height="16" rx="2" fill="#fff" stroke="#cbd5e1"/>
+    <rect x="381" y="1149" width="14" height="3" fill="#94a3b8"/>
+    <text x="404" y="1162" class="legend-item">External service</text>
+    <rect x="380" y="1168" width="16" height="16" rx="2" fill="#fff" stroke="#fca5a5"/>
+    <rect x="381" y="1169" width="14" height="3" fill="#ef4444"/>
+    <text x="404" y="1182" class="legend-item">VPS service</text>
+    <rect x="380" y="1188" width="16" height="16" rx="2" fill="#fff" stroke="#93c5fd"/>
+    <rect x="381" y="1189" width="14" height="3" fill="#3b82f6"/>
+    <text x="404" y="1202" class="legend-item">Mac public service</text>
+    <rect x="380" y="1208" width="16" height="16" rx="2" fill="#fff" stroke="#fdba74"/>
+    <rect x="381" y="1209" width="14" height="3" fill="#f97316"/>
+    <text x="404" y="1222" class="legend-item">Loopback service</text>
+    <rect x="380" y="1228" width="16" height="16" rx="2" fill="#fff" stroke="#c084fc"/>
+    <rect x="381" y="1229" width="14" height="3" fill="#a855f7"/>
+    <text x="404" y="1242" class="legend-item">TB worker</text>
+
+    <!-- Boundaries -->
+    <text x="680" y="1144" class="legend-section">BOUNDARIES</text>
+    <line x1="680" y1="1158" x2="710" y2="1158" stroke="#bfdbfe" stroke-width="1.5"/>
+    <text x="718" y="1162" class="legend-item">Network layer boundary</text>
+    <line x1="680" y1="1178" x2="710" y2="1178" stroke="#93c5fd" stroke-width="1.5" stroke-dasharray="4 4"/>
+    <text x="718" y="1182" class="legend-item">Loopback-only zone</text>
+  </g>
+</svg>

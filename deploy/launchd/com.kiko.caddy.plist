@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kiko.caddy</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__HOME__/bin/caddy</string>
+        <string>run</string>
+        <string>--config</string>
+        <string>__REPO_DIR__/deploy/Caddyfile</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CLOUDFLARE_API_TOKEN</key>
+        <string>__CLOUDFLARE_API_TOKEN__</string>
+        <key>INTERNAL_AUTH_SECRET</key>
+        <string>__INTERNAL_AUTH_SECRET__</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>__BASE_DIRECTORY__/logs/caddy-run.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__BASE_DIRECTORY__/logs/caddy-run.log</string>
+</dict>
+</plist>
