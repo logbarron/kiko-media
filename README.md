@@ -41,21 +41,21 @@ Read the full story on my website: [Kiko Media](https://loganbarron.com/posts/20
   <img src="docs/architecture-overview.svg" alt="Kiko Media architecture overview" width="860">
 </p>
 
-## Demo Grid
+## Demo Videos
 
-The four clips below (along with the others in the drop down) attempt to show how the system looks and works. More information here - [Kiko Media](https://loganbarron.com/posts/2026-03-20-kiko-media). 
+The four clips below (along with all others in the drop down) attempt to show how the system looks and works. More information here - [Kiko Media](https://loganbarron.com/posts/2026-03-20-kiko-media). 
 
 ### Happy Path
 
-Guest entry, upload, and gallery.
+Guest entry, gallery, and lightbox.
 
 https://github.com/user-attachments/assets/7bd5e70a-df42-4056-adc4-ce9823b0a56d
 
-### Live Updates
+### Upload
 
-Gallery refresh behavior as new assets become available.
+Initial Upload, and 2nd upload.
 
-https://github.com/user-attachments/assets/ffcbd396-1940-4445-88b8-a4b2c2cbd283
+https://github.com/user-attachments/assets/1fb6c597-4113-4eea-932d-cb256cf4082f
 
 ### Orchestrator Setup
 
@@ -78,15 +78,15 @@ Turnstile bootstrap plus optional gate-secret flow.
 
 https://github.com/user-attachments/assets/76c7d589-99d3-409c-902b-f05b3f887877
 
-### Upload
+### Live Updates
 
-Resumable upload UX from the guest-facing gallery.
+Gallery refresh behavior as new assets become available.
 
-https://github.com/user-attachments/assets/1fb6c597-4113-4eea-932d-cb256cf4082f
+https://github.com/user-attachments/assets/ffcbd396-1940-4445-88b8-a4b2c2cbd283
 
 ### Hearts
 
-Light social feedback without turning the event into an account system.
+Light social feedback with hearts.
 
 https://github.com/user-attachments/assets/c2518b49-220b-46cd-aeb8-2d0b765cc8d9
 
@@ -96,9 +96,9 @@ Mobile refresh behavior for the event gallery.
 
 https://github.com/user-attachments/assets/e6cb3f1c-9b9c-4ed2-ac48-167fd732dd82
 
-### Theme Toggle
+### Dark Mode Light Mode Toggle
 
-Theme switching in the gallery UI.
+Theme switching in the UI.
 
 https://github.com/user-attachments/assets/8264158d-7b98-4e0b-b7a3-b01c982654f8
 
