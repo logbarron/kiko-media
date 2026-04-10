@@ -629,7 +629,7 @@ func printThunderboltWorkerCountStatus(home: String) {
     }
 }
 
-func printThunderboltShutdownWorkerIndependenceNote() {
+func printThunderboltStopWorkerIndependenceNote() {
     printHint("Remote Thunderbolt workers are independent; this command only controls local orchestrator services.")
 }
 

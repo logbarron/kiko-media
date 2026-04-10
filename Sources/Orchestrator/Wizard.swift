@@ -823,6 +823,9 @@ func runWizard() throws {
                 printBody("\(bold)Verify:\(reset)")
             } else {
                 printBody("\(yellow)!\(reset) One or more services failed to start. Retry manually:")
+                print("\(listItemIndent)\(bold)launchctl enable gui/$(id -u)/com.kiko.caddy\(reset)")
+                print("\(listItemIndent)\(bold)launchctl enable gui/$(id -u)/com.kiko.tusd\(reset)")
+                print("\(listItemIndent)\(bold)launchctl enable gui/$(id -u)/com.kiko.media\(reset)")
                 print("\(listItemIndent)\(bold)launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.caddy.plist\(reset)")
                 print("\(listItemIndent)\(bold)launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.tusd.plist\(reset)")
                 print("\(listItemIndent)\(bold)launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.media.plist\(reset)")

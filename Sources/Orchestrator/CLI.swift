@@ -27,7 +27,8 @@ func printSetupHelp(repoRoot: String?) {
         ("--status",        "Show service and configuration status"),
         ("--start",         "Start all services (enables sleep prevention)"),
         ("--restart",       "Stop then start all services"),
-        ("--shutdown",      "Stop all services (disables sleep prevention)"),
+        ("--stop",          "Stop all services (disables sleep prevention)"),
+        ("--shutdown",      "Stop and persistently disable all services"),
     ])
     printHelpGroup("Workers", [
         ("--thunderbolt",   "Configure Thunderbolt workers"),
@@ -43,6 +44,7 @@ enum SetupCLICommand: String {
     case tbStatus = "tb-status"
     case internalRegenFrontend = "internal-regen-frontend"
     case start
+    case stop
     case shutdown
     case restart
     case thunderbolt
@@ -55,8 +57,8 @@ struct SetupCLIParseResult {
 
 func parseAndValidateCLIArgs(_ args: [String]) -> SetupCLIParseResult {
     let known: Set<String> = [
-        "--status", "--tb-status", "--internal-regen-frontend", "--start", "--shutdown", "--restart", "--thunderbolt",
-        "status", "tb-status", "internal-regen-frontend", "start", "shutdown", "restart", "thunderbolt",
+        "--status", "--tb-status", "--internal-regen-frontend", "--start", "--stop", "--shutdown", "--restart", "--thunderbolt",
+        "status", "tb-status", "internal-regen-frontend", "start", "stop", "shutdown", "restart", "thunderbolt",
     ]
 
     for arg in args {
@@ -77,6 +79,7 @@ func parseAndValidateCLIArgs(_ args: [String]) -> SetupCLIParseResult {
     if args.contains("--tb-status") { commands.append(.tbStatus) }
     if args.contains("--internal-regen-frontend") { commands.append(.internalRegenFrontend) }
     if args.contains("--start") { commands.append(.start) }
+    if args.contains("--stop") { commands.append(.stop) }
     if args.contains("--shutdown") { commands.append(.shutdown) }
     if args.contains("--restart") { commands.append(.restart) }
     if args.contains("--thunderbolt") { commands.append(.thunderbolt) }
@@ -85,7 +88,7 @@ func parseAndValidateCLIArgs(_ args: [String]) -> SetupCLIParseResult {
         return SetupCLIParseResult(command: nil, error: nil)
     }
     if commands.count > 1 {
-        return SetupCLIParseResult(command: nil, error: "Choose only one command: --status, --tb-status, --start, --shutdown, --restart, or --thunderbolt.")
+        return SetupCLIParseResult(command: nil, error: "Choose only one command: --status, --tb-status, --start, --stop, --shutdown, --restart, or --thunderbolt.")
     }
     if args.count != 1 {
         let flag = "--" + commands[0].rawValue
@@ -152,10 +155,16 @@ func runCLICommand(_ command: SetupCLICommand) -> Never {
             exit(1)
         }
 
-    case .shutdown:
-        let ok = shutdownServices(home: home, exitAfter: false, disableSleepPreventionOnCleanShutdown: true)
+    case .stop:
+        let ok = stopServices(home: home, exitAfter: false, disableSleepPreventionOnCleanStop: true)
         print()
-        printThunderboltShutdownWorkerIndependenceNote()
+        printThunderboltStopWorkerIndependenceNote()
+        exit(ok ? 0 : 1)
+
+    case .shutdown:
+        let ok = disableAllServices(home: home)
+        print()
+        printThunderboltStopWorkerIndependenceNote()
         exit(ok ? 0 : 1)
 
     case .start:
@@ -183,8 +192,9 @@ func runCLICommand(_ command: SetupCLICommand) -> Never {
         }
 
         printWarning("One or more services failed to start.")
-        let commands = startOrder.map { "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\($0.plist)" }
-        printManualCommands("Manual start:", commands: commands)
+        let enableCommands = startOrder.map { "launchctl enable gui/$(id -u)/\($0.launchdLabel)" }
+        let bootstrapCommands = startOrder.map { "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\($0.plist)" }
+        printManualCommands("Manual start:", commands: enableCommands + bootstrapCommands)
         printHint("See docs/runbook.md for troubleshooting.")
         print()
         exit(1)
@@ -205,19 +215,19 @@ func runCLICommand(_ command: SetupCLICommand) -> Never {
         _ = enableSleepPrevention()
 
         print()
-        printCompactSectionTitle("Shutdown phase")
+        printCompactSectionTitle("Stop phase")
         print()
-        let cleanShutdown = shutdownServices(
+        let cleanStop = stopServices(
             home: home,
             exitAfter: false,
-            disableSleepPreventionOnCleanShutdown: false,
+            disableSleepPreventionOnCleanStop: false,
             printLifecycleHeader: false
         )
         print()
-        printThunderboltShutdownWorkerIndependenceNote()
-        if !cleanShutdown {
+        printThunderboltStopWorkerIndependenceNote()
+        if !cleanStop {
             print()
-            printWarning("Shutdown incomplete; not restarting.")
+            printWarning("Stop incomplete; not restarting.")
             exit(1)
         }
 
@@ -235,8 +245,9 @@ func runCLICommand(_ command: SetupCLICommand) -> Never {
         }
 
         printWarning("One or more services failed to start.")
-        let commands = startOrder.map { "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\($0.plist)" }
-        printManualCommands("Manual start:", commands: commands)
+        let enableCommands = startOrder.map { "launchctl enable gui/$(id -u)/\($0.launchdLabel)" }
+        let bootstrapCommands = startOrder.map { "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\($0.plist)" }
+        printManualCommands("Manual start:", commands: enableCommands + bootstrapCommands)
         printHint("See docs/runbook.md for troubleshooting.")
         print()
         exit(1)

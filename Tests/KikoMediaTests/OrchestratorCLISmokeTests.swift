@@ -12,6 +12,7 @@ struct OrchestratorCLISmokeTests {
         "<base>",
         "--status",
         "--start",
+        "--stop",
         "--restart",
         "--shutdown",
         "--thunderbolt",
@@ -52,6 +53,26 @@ struct OrchestratorCLISmokeTests {
         let groups = Self.extractHelpGroupItems(from: orchestratorHelp)
         #expect(groups["Services"]?.contains("--status") == true)
         #expect(groups["Setup"]?.contains("--status") != true)
+    }
+
+    @Test("orchestrator --help groups --stop under Services")
+    func orchestratorHelpStopGrouping() throws {
+        let repoRoot = try Self.resolveRepoRoot()
+        let orchestratorHelp = try Self.runOrchestrator(repoRoot: repoRoot, arguments: ["--help"])
+
+        #expect(orchestratorHelp.status == 0)
+        let groups = Self.extractHelpGroupItems(from: orchestratorHelp)
+        #expect(groups["Services"]?.contains("--stop") == true)
+    }
+
+    @Test("orchestrator --help groups --shutdown under Services")
+    func orchestratorHelpShutdownGrouping() throws {
+        let repoRoot = try Self.resolveRepoRoot()
+        let orchestratorHelp = try Self.runOrchestrator(repoRoot: repoRoot, arguments: ["--help"])
+
+        #expect(orchestratorHelp.status == 0)
+        let groups = Self.extractHelpGroupItems(from: orchestratorHelp)
+        #expect(groups["Services"]?.contains("--shutdown") == true)
     }
 
     @Test("orchestrator --status exits successfully")

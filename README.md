@@ -152,6 +152,7 @@ Use these documents for depth:
 swift run -c release orchestrator
 swift run -c release orchestrator --status
 swift run -c release orchestrator --start
+swift run -c release orchestrator --stop
 swift run -c release orchestrator --shutdown
 swift run -c release orchestrator --restart
 swift run -c release orchestrator --thunderbolt

@@ -723,13 +723,16 @@ swift run -c release orchestrator --status
 # Show Thunderbolt worker reachability plus effective runtime context
 swift run -c release orchestrator --tb-status
 
-# Load all three LaunchAgents (caddy, tusd, kiko-media)
+# Start all services (enable + bootstrap + caffeinate)
 swift run -c release orchestrator --start
 
-# Unload all three LaunchAgents (launchctl bootout)
+# Stop all services for current session (bootout + remove caffeinate)
+swift run -c release orchestrator --stop
+
+# Persistently disable all services across reboots (disable + bootout)
 swift run -c release orchestrator --shutdown
 
-# Full reload: shutdown then start
+# Full reload: stop then start
 swift run -c release orchestrator --restart
 
 # Run Thunderbolt worker generation + benchmark flow
@@ -768,7 +771,7 @@ chmod 600 ~/Library/LaunchAgents/com.kiko.*.plist
 ```
 
 **Re-running the wizard:** You can re-run `swift run -c release orchestrator` at any time to change settings. It remembers previous values within a session and lets you keep or change each one.
-After generating files, the wizard proceeds through build + optional flush and then, by default, reloads services using `launchctl bootout` + `launchctl bootstrap` for all three LaunchAgents (you can stop before restart if needed).
+After generating files, the wizard proceeds through build + optional flush and then, by default, reloads services by stopping them first and then re-enabling + bootstrapping all three LaunchAgents (you can stop before restart if needed).
 If you enable flush mode, it deletes `metadata.db` (+ `-wal`/`-shm`) and clears `thumbs/` + `previews/`, while preserving `uploads/` and `moderated/`.
 If you want a true empty test reset instead, run `swift scripts/wipe-test-media.swift`. It has no flags; it reads `BASE_DIRECTORY` and `EXTERNAL_SSD_PATH` from `~/Library/LaunchAgents/com.kiko.media.plist`, prints the wipe targets, and only proceeds after you type `WIPE`. It stops services, clears `uploads/`, `thumbs/`, `previews/`, `moderated/`, removes `metadata.db` (+ `-wal`/`-shm`), and clears the configured SSD archive directory. It does not restart services.
 
@@ -990,12 +993,15 @@ If this times out:
 Load all three services:
 
 ```bash
+launchctl enable gui/$(id -u)/com.kiko.caddy
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.caddy.plist
 ```
 ```bash
+launchctl enable gui/$(id -u)/com.kiko.tusd
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.tusd.plist
 ```
 ```bash
+launchctl enable gui/$(id -u)/com.kiko.media
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.media.plist
 ```
 
@@ -1220,23 +1226,51 @@ launchctl stop com.kiko.caddy
 
 Note: Upload files are preserved in `uploads/`. On restart, uploads with valid persisted metadata are re-queued; partial in-flight uploads remain for tusd to resume/complete.
 
-### Full Unload (Disable Auto-Start)
+### Transient Stop
+
+Stop services for the current session. They will reload on next login via `RunAtLoad`.
 
 Shortcut:
+```bash
+cd __REPO_DIR__
+swift run -c release orchestrator --stop
+```
+
+Manual equivalent:
+```bash
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kiko.media.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kiko.tusd.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kiko.caddy.plist
+```
+
+### Persistent Disable
+
+Stop services and prevent auto-start across reboots. Use this for OS updates or extended maintenance.
+
 ```bash
 cd __REPO_DIR__
 swift run -c release orchestrator --shutdown
 ```
 
+Manual equivalent:
 ```bash
+launchctl disable gui/$(id -u)/com.kiko.media
+launchctl disable gui/$(id -u)/com.kiko.tusd
+launchctl disable gui/$(id -u)/com.kiko.caddy
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kiko.media.plist
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kiko.tusd.plist
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kiko.caddy.plist
-
-# Verify stopped
-launchctl list | grep kiko
-# Should return nothing
+launchctl remove com.kiko.media.caffeinate
 ```
+
+To re-enable after maintenance:
+```bash
+swift run -c release orchestrator --start
+```
+
+`--start` calls `launchctl enable` before `launchctl bootstrap` for each service it loads. If a service is still running but marked disabled after a partial/manual recovery flow, run `launchctl enable` for that service explicitly.
+
+> **Semantic change (2026-04):** `--shutdown` previously performed a transient stop (equivalent to current `--stop`). It now persistently disables services across reboots. If you only need a temporary stop, use `--stop`.
 
 ### 8.1 Launchd Management (Single Service)
 
@@ -1256,11 +1290,12 @@ launchctl stop com.kiko.caddy && launchctl start com.kiko.caddy
 # Force restart (kill + auto-restart via KeepAlive)
 launchctl kickstart -k gui/$(id -u)/com.kiko.media
 
-# Unload (stop and disable auto-start)
+# Unload (stop for current session; reloads on next login)
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kiko.media.plist
 
 # Reload after editing a plist
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kiko.media.plist
+launchctl enable gui/$(id -u)/com.kiko.media
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.media.plist
 ```
 
@@ -1293,8 +1328,11 @@ curl http://__BIND_ADDRESS__:__PUBLIC_PORT__/health
 # Manual: caffeinate -s
 ```
 
-**If services didn't auto-start:** They may not be loaded. Run:
+**If services didn't auto-start:** They may be disabled or not loaded. Run:
 ```bash
+launchctl enable gui/$(id -u)/com.kiko.caddy
+launchctl enable gui/$(id -u)/com.kiko.tusd
+launchctl enable gui/$(id -u)/com.kiko.media
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.caddy.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.tusd.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.media.plist
@@ -1404,6 +1442,9 @@ swift run -c release orchestrator --start
 
 Manual fallback:
 ```bash
+launchctl enable gui/$(id -u)/com.kiko.caddy
+launchctl enable gui/$(id -u)/com.kiko.tusd
+launchctl enable gui/$(id -u)/com.kiko.media
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.caddy.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.tusd.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.media.plist

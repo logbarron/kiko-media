@@ -33,6 +33,7 @@ Edit `~/Library/LaunchAgents/com.kiko.media.plist` and change the value in the `
 Then reload:
 ```bash
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kiko.media.plist
+launchctl enable gui/$(id -u)/com.kiko.media
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kiko.media.plist
 ```
 
@@ -47,6 +48,7 @@ Service-control shortcuts:
 swift run -c release orchestrator --status
 swift run -c release orchestrator --tb-status
 swift run -c release orchestrator --start
+swift run -c release orchestrator --stop
 swift run -c release orchestrator --shutdown
 swift run -c release orchestrator --restart
 swift run -c release orchestrator --thunderbolt
@@ -86,7 +88,7 @@ When to change:
 
 Operational note:
 - `__BASE_DIRECTORY__/moderated/` must remain readable. If marker files are unreadable, startup moderation reconciliation is skipped and SSD rebuild aborts (fail closed) to avoid unintentionally exposing moderated content.
-- Keep the Caddy/tusd wiring in sync with these ports. Caddy serves the public site on `https://__DOMAIN__:8443` (bound to the WireGuard IP) and reverse-proxies public API routes to `127.0.0.1:__PUBLIC_PORT__`, proxies `/files/*` to tusd at `127.0.0.1:1080`, and proxies internal-site API routes to `127.0.0.1:__INTERNAL_PORT__`; tusd's `-hooks-http` target uses `INTERNAL_PORT`. After editing any of these env vars, reload the launchd plists so the new values take effect (`launchctl bootout`/`bootstrap` or `swift run -c release orchestrator --restart`).
+- Keep the Caddy/tusd wiring in sync with these ports. Caddy serves the public site on `https://__DOMAIN__:8443` (bound to the WireGuard IP) and reverse-proxies public API routes to `127.0.0.1:__PUBLIC_PORT__`, proxies `/files/*` to tusd at `127.0.0.1:1080`, and proxies internal-site API routes to `127.0.0.1:__INTERNAL_PORT__`; tusd's `-hooks-http` target uses `INTERNAL_PORT`. After editing any of these env vars, reload the launchd plists so the new values take effect (`launchctl bootout`, `launchctl enable`, then `launchctl bootstrap`, or `swift run -c release orchestrator --restart`).
 
 ---
 

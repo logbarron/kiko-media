@@ -224,20 +224,20 @@ func reloadCaddyIfRunning() -> Bool {
 }
 
 @discardableResult
-func shutdownServices(home: String, exitAfter: Bool, disableSleepPreventionOnCleanShutdown: Bool) -> Bool {
-    shutdownServices(
+func stopServices(home: String, exitAfter: Bool, disableSleepPreventionOnCleanStop: Bool) -> Bool {
+    stopServices(
         home: home,
         exitAfter: exitAfter,
-        disableSleepPreventionOnCleanShutdown: disableSleepPreventionOnCleanShutdown,
+        disableSleepPreventionOnCleanStop: disableSleepPreventionOnCleanStop,
         printLifecycleHeader: true
     )
 }
 
 @discardableResult
-func shutdownServices(
+func stopServices(
     home: String,
     exitAfter: Bool,
-    disableSleepPreventionOnCleanShutdown: Bool,
+    disableSleepPreventionOnCleanStop: Bool,
     printLifecycleHeader: Bool
 ) -> Bool {
     if printLifecycleHeader {
@@ -248,8 +248,8 @@ func shutdownServices(
     let remaining = loadedKikoServices()
     print()
     if remaining.isEmpty {
-        printSuccess("Shutdown complete. All kiko-media services are unloaded.")
-        if disableSleepPreventionOnCleanShutdown {
+        printSuccess("Stop complete. All kiko-media services are unloaded.")
+        if disableSleepPreventionOnCleanStop {
             _ = disableSleepPrevention()
         }
         print()
@@ -262,15 +262,74 @@ func shutdownServices(
         printManualCommands("Manual stop:", commands: commands)
     }
 
-    let cleanShutdown = remaining.isEmpty
+    let cleanStop = remaining.isEmpty
     if exitAfter {
-        printSectionTitle("Shutdown Complete")
+        printSectionTitle("Stop Complete")
         printBody("\(dim)Re-run the wizard when you are ready to configure or start services.\(reset)")
         print()
         exit(0)
     }
 
-    return cleanShutdown
+    return cleanStop
+}
+
+@discardableResult
+func disableAllServices(home: String) -> Bool {
+    printSectionTitle("Applying Service Lifecycle (Persistent Disable)")
+
+    let uid = getuid()
+    var disableOK = true
+    let disableCommands = stopOrder.map { "launchctl disable gui/$(id -u)/\($0.launchdLabel)" }
+    let stopCommands = stopOrder.map { "launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/\($0.plist)" }
+
+    for service in stopOrder {
+        let (exitCode, output) = runProcess(
+            executable: "/bin/launchctl",
+            arguments: ["disable", "gui/\(uid)/\(service.launchdLabel)"]
+        )
+        if exitCode == 0 {
+            printSuccess("Disabled \(service.label)")
+        } else {
+            disableOK = false
+            let summary = firstLine(output)
+            if summary.isEmpty {
+                printWarning("Could not disable \(service.label). \(dim)(continuing)\(reset)")
+            } else {
+                printWarning("Could not disable \(service.label): \(summary) \(dim)(continuing)\(reset)")
+            }
+        }
+    }
+
+    bootoutAllServices(home: home)
+
+    let remaining = loadedKikoServices()
+    let sleepOK = disableSleepPrevention()
+    let fullyDisabled = disableOK && remaining.isEmpty && sleepOK
+
+    print()
+    if fullyDisabled {
+        printSuccess("Shutdown complete. All services are disabled and will not auto-start on reboot.")
+        printHint("Run \(bold)orchestrator --start\(reset)\(dim) to re-enable.\(reset)")
+    } else {
+        if !disableOK {
+            printWarning("One or more services could not be persistently disabled.")
+            printManualCommands("Manual disable:", commands: disableCommands)
+        }
+        if !remaining.isEmpty {
+            printWarning("Some services are still loaded after disable.")
+            for service in remaining {
+                printHint(service.launchdLabel)
+            }
+            printManualCommands("Manual stop:", commands: stopCommands)
+        }
+        if !sleepOK {
+            printWarning("Sleep prevention could not be disabled.")
+            printManualCommands("Manual remove:", commands: ["launchctl remove \(caffeinateJobLabel)"])
+        }
+    }
+    print()
+
+    return fullyDisabled
 }
 
 private func promptMenuSelection(maxOption: Int) -> Int {
@@ -380,11 +439,12 @@ func runStartMenu(home: String, repoRoot: String) {
                     printSuccess("Services started.")
                 } else {
                     printWarning("One or more services failed to start.")
-                    let commands = startOrder.map { "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\($0.plist)" }
-                    printManualCommands("Manual start:", commands: commands)
+                    let enableCommands = startOrder.map { "launchctl enable gui/$(id -u)/\($0.launchdLabel)" }
+                    let bootstrapCommands = startOrder.map { "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\($0.plist)" }
+                    printManualCommands("Manual start:", commands: enableCommands + bootstrapCommands)
                 }
                 printSectionTitle("Done")
-                printBody("\(dim)Re-run the wizard to update configuration or shut down services.\(reset)")
+                printBody("\(dim)Re-run the wizard to update configuration or stop services.\(reset)")
                 print()
                 exit(0)
             case .runGuidedConfiguration:
@@ -408,7 +468,7 @@ func runStartMenu(home: String, repoRoot: String) {
             option += 1
         }
         let stopAndExitOption = option
-        printActionMenuItem(option, title: "Stop services and exit", detail: "Shut down caddy, tusd, and kiko-media, then quit setup.")
+        printActionMenuItem(option, title: "Stop services and exit", detail: "Stop caddy, tusd, and kiko-media, then quit setup.")
         option += 1
         let guidedStopOption = option
         printActionMenuItem(option, title: "Run guided configuration (stop services first)", detail: "Stop services before setup, then restart cleanly after changes.")
@@ -432,10 +492,10 @@ func runStartMenu(home: String, repoRoot: String) {
 
             switch n {
             case stopAndExitOption:
-                _ = shutdownServices(home: home, exitAfter: true, disableSleepPreventionOnCleanShutdown: true)
+                _ = stopServices(home: home, exitAfter: true, disableSleepPreventionOnCleanStop: true)
             case guidedStopOption:
-                let cleanShutdown = shutdownServices(home: home, exitAfter: false, disableSleepPreventionOnCleanShutdown: false)
-                if !cleanShutdown && !confirm("Continue configuration even though some services are still loaded") {
+                let cleanStop = stopServices(home: home, exitAfter: false, disableSleepPreventionOnCleanStop: false)
+                if !cleanStop && !confirm("Continue configuration even though some services are still loaded") {
                     exitStartMenu()
                 }
                 openGuidedConfiguration()
@@ -465,11 +525,6 @@ func bootstrapAllServices(home: String) -> Bool {
             continue
         }
 
-        if isLaunchAgentLoaded(service.launchdLabel) {
-            printHint("\(service.label) already loaded (skipping)")
-            continue
-        }
-
         let (enableExit, enableOutput) = runProcess(
             executable: "/bin/launchctl",
             arguments: ["enable", "gui/\(uid)/\(service.launchdLabel)"]
@@ -479,6 +534,11 @@ func bootstrapAllServices(home: String) -> Bool {
             if !summary.isEmpty {
                 printHint("enable \(service.label): \(summary) (continuing)")
             }
+        }
+
+        if isLaunchAgentLoaded(service.launchdLabel) {
+            printHint("\(service.label) already loaded (skipping bootstrap)")
+            continue
         }
 
         let (exitCode, output) = runProcess(

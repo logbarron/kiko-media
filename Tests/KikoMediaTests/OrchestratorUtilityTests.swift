@@ -4,6 +4,30 @@ import Testing
 @testable import KikoMediaCore
 @testable import Orchestrator
 
+@Suite("Orchestrator CLI parsing")
+struct OrchestratorCLIParsingTests {
+    @Test("parseAndValidateCLIArgs accepts --stop")
+    func parseAcceptsStopFlag() {
+        let result = parseAndValidateCLIArgs(["--stop"])
+        #expect(result.command == .stop)
+        #expect(result.error == nil)
+    }
+
+    @Test("parseAndValidateCLIArgs accepts --shutdown")
+    func parseAcceptsShutdownFlag() {
+        let result = parseAndValidateCLIArgs(["--shutdown"])
+        #expect(result.command == .shutdown)
+        #expect(result.error == nil)
+    }
+
+    @Test("parseAndValidateCLIArgs rejects multiple lifecycle commands")
+    func parseRejectsMultipleLifecycleCommands() {
+        let result = parseAndValidateCLIArgs(["--stop", "--shutdown"])
+        #expect(result.command == nil)
+        #expect(result.error?.contains("Choose only one command") == true)
+    }
+}
+
 @Suite("Orchestrator validation networking")
 struct OrchestratorValidationNetworkingTests {
     @Test("validation helpers enforce local format contracts")
